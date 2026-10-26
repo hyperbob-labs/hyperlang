@@ -1,0 +1,181 @@
+--- hyperlang_otp_parse.baseline
++++ src/hyperlang_otp_parse.erl
+@@ -688,32 +688,35 @@
+ 		    | 'nominal' | 'opaque' | 'record' | 'native_record'
+ 		    | 'type'.
+ 
+-build_typed_attribute({atom,Aa,record},
+-		      {typed_record, {atom,_An,RecordName}, RecTuple}) ->
+-    {attribute,Aa,record,{RecordName,record_tuple(RecTuple)}};
+-build_typed_attribute({atom,Aa,Attr},
+-                      {type_def, {call,_,{atom,_,TypeName},Args}, Type})
+-  when Attr =:= 'type' ; Attr =:= 'opaque' ; Attr =:= 'nominal'->
+-    lists:foreach(fun({var, A, '_'}) -> ret_err(A, "bad type variable");
+-                     (_)             -> ok
+-                  end, Args),
+-    lists:foreach(fun({var, _, _}) -> true;
+-                     (Other)       -> ret_abstr_err(Other,
+-                                                    "bad type variable")
+-                   end, Args),
+-    {attribute,Aa,Attr,{TypeName,Type,Args}};
+-build_typed_attribute({atom,Aa,Attr}=Abstr,_) ->
+-    case Attr of
++build_typed_attribute({atom,Aa,Attr}=Abstr, Typed) ->
++    case {safe_attribute_name(Attr), Typed} of
++        {record, {typed_record, {atom,_An,RecordName}, RecTuple}} ->
++            {attribute,Aa,record,{RecordName,record_tuple(RecTuple)}};
++        {SafeAttr, {type_def, {call,_,{atom,_,TypeName},Args}, Type}}
++          when SafeAttr =:= 'type' ; SafeAttr =:= 'opaque' ; SafeAttr =:= 'nominal' ->
++            lists:foreach(fun({var, A, '_'}) -> ret_err(A, "bad type variable");
++                             (_)             -> ok
++                          end, Args),
++            lists:foreach(fun({var, _, _}) -> true;
++                             (Other)       -> ret_abstr_err(Other,
++                                                            "bad type variable")
++                           end, Args),
++            {attribute,Aa,SafeAttr,{TypeName,Type,Args}};
++        {SafeAttr, _} ->
++    case SafeAttr of
+         record -> error_bad_decl(Abstr, record);
+         type   -> error_bad_decl(Abstr, type);
+         nominal -> error_bad_decl(Abstr, nominal);
+         native_record -> error_bad_decl(Abstr, native_record);
+ 	opaque -> error_bad_decl(Abstr, opaque);
+         _      -> ret_err(Aa, "bad attribute")
++    end
+     end.
+ 
+-build_type_spec({Kind,Aa}, {SpecFun, TypeSpecs})
+-  when Kind =:= spec ; Kind =:= callback ->
++build_type_spec({Kind,Aa}, {SpecFun, TypeSpecs}) ->
++    SafeKind = safe_attribute_name(Kind),
++    case SafeKind of
++        _ when SafeKind =:= spec ; SafeKind =:= callback ->
+     NewSpecFun =
+ 	case SpecFun of
+ 	    {atom, _, Fun} ->
+@@ -721,7 +724,8 @@
+ 	    {{atom, _, Mod}, {atom, _, Fun}} ->
+ 		{Mod, Fun, find_arity_from_specs(TypeSpecs)}
+         end,
+-    {attribute,Aa,Kind,{NewSpecFun, TypeSpecs}}.
++    {attribute,Aa,SafeKind,{NewSpecFun, TypeSpecs}}
++    end.
+ 
+ find_arity_from_specs([Spec|_]) ->
+     %% Use the first spec to find the arity. If all are not the same,
+@@ -794,11 +798,34 @@
+     {Tag, A, Name, Types}.
+ 
+ type_tag(TypeName, NumberOfTypeVariables) ->
+-    case erl_internal:is_type(TypeName, NumberOfTypeVariables) of
+-        true -> type;
+-        false -> user_type
++    case safe_existing_atom(TypeName) of
++        {ok, ExistingTypeName} ->
++            case erl_internal:is_type(ExistingTypeName, NumberOfTypeVariables) of
++                true -> type;
++                false -> user_type
++            end;
++        error ->
++            user_type
+     end.
+ 
++safe_attribute_name(<<"record">>) -> record;
++safe_attribute_name(<<"type">>) -> type;
++safe_attribute_name(<<"opaque">>) -> opaque;
++safe_attribute_name(<<"nominal">>) -> nominal;
++safe_attribute_name(<<"native_record">>) -> native_record;
++safe_attribute_name(<<"spec">>) -> spec;
++safe_attribute_name(<<"callback">>) -> callback;
++safe_attribute_name(Name) -> Name.
++
++safe_existing_atom(Name) when is_atom(Name) ->
++    {ok, Name};
++safe_existing_atom(Name) when is_binary(Name) ->
++    try binary_to_existing_atom(Name) of
++        Atom -> {ok, Atom}
++    catch
++        _:_ -> error
++    end.
++
+ abstract2(Term, Anno) ->
+     Line = erl_anno:line(Anno),
+     abstract(Term, Line).
+@@ -811,6 +838,20 @@
+ %%	{attribute,Anno,file,{Name,Line}}
+ %%	{attribute,Anno,Name,Val}
+ 
++build_attribute({atom,Aa,<<"module">>}, Val) ->
++    build_attribute({atom,Aa,module}, Val);
++build_attribute({atom,Aa,<<"export">>}, Val) ->
++    build_attribute({atom,Aa,export}, Val);
++build_attribute({atom,Aa,<<"import">>}, Val) ->
++    build_attribute({atom,Aa,import}, Val);
++build_attribute({atom,Aa,<<"record">>}, Val) ->
++    build_attribute({atom,Aa,record}, Val);
++build_attribute({atom,Aa,<<"file">>}, Val) ->
++    build_attribute({atom,Aa,file}, Val);
++build_attribute({atom,Aa,<<"doc">>}, Val) ->
++    build_attribute({atom,Aa,doc}, Val);
++build_attribute({atom,Aa,<<"moduledoc">>}, Val) ->
++    build_attribute({atom,Aa,moduledoc}, Val);
+ build_attribute({atom,Aa,module}, Val) ->
+     case Val of
+ 	[{atom,_Am,Module}] ->
+@@ -1014,30 +1055,25 @@
+     {'try',A,Es,Scs,Ccs,As}.
+ 
+ build_sigil(SigilPrefix, String, SigilSuffix) ->
+-    Type = element(3, SigilPrefix),
++    Type = safe_sigil_name(element(3, SigilPrefix)),
+     Suffix = element(3, SigilSuffix),
+     if
+         Type =:= 'S';
+         Type =:= 's' ->
+-            case Suffix of
+-                "" ->
+-                    %% Keep as string()
+-                    String;
+-                _ ->
+-                    ret_err(
+-                      element(2, SigilSuffix),
+-                      "illegal sigil suffix")
++            case safe_empty_sigil_suffix(Suffix) of
++                true -> String; %% Keep as string()
++                false -> ret_err(element(2, SigilSuffix), "illegal sigil suffix")
+             end;
+         Type =:= '';    % The empty (default) sigil
+         Type =:= 'B';
+         Type =:= 'b' ->
+-            case Suffix of
+-                "" ->
++            case safe_empty_sigil_suffix(Suffix) of
++                true ->
+                     %% Convert to UTF-8 binary()
+                     {bin,?anno(SigilPrefix),
+                      [{bin_element,
+                        ?anno(String),String,default,[utf8]}]};
+-                _ ->
++                false ->
+                     ret_err(
+                       element(2, SigilSuffix),
+                       "illegal sigil suffix")
+@@ -1054,6 +1090,17 @@
+               "illegal sigil prefix")
+     end.
+ 
++safe_sigil_name(<<"S">>) -> 'S';
++safe_sigil_name(<<"s">>) -> 's';
++safe_sigil_name(<<"B">>) -> 'B';
++safe_sigil_name(<<"b">>) -> 'b';
++safe_sigil_name(<<>>) -> '';
++safe_sigil_name(Name) -> Name.
++
++safe_empty_sigil_suffix("") -> true;
++safe_empty_sigil_suffix(<<>>) -> true;
++safe_empty_sigil_suffix(_) -> false.
++
+ -spec ret_err(_, _) -> no_return().
+ ret_err(Anno, S) ->
+     return_error(location(Anno), S).

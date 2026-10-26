@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">The fastest, smallest, fairest sandbox on the BEAM</title>
+<desc id="d">Compute: Hyperlang 0.35 ms, wasmex 0.68 ms, Luerl 84.7 ms, Dune 275 ms, erl_eval + handler 106 ms, Peer node 0.33 ms, OS process 0.38 ms; Start a tenant: Hyperlang 0.05 ms, wasmex 0.08 ms, Luerl 0.03 ms, Dune 0.41 ms, erl_eval + handler 0.01 ms, Peer node 112 ms, OS process 123 ms, Docker 178 ms; Memory per tenant: Hyperlang 23 KiB, wasmex 89 KiB, Luerl 71 KiB, Dune 109 KiB, erl_eval + handler 23 KiB, Peer node 74 MiB, OS process 76 MiB; Noisy neighbours: Hyperlang 1.37×, wasmex 4.5×, Luerl 3.04×, Dune 35.7×, erl_eval + handler 7.4×, Peer node 1.14×</desc>
+<rect width="1600" height="900" fill="#fcfcfb"/>
+<text x="48" y="76" font-size="40" font-weight="650" fill="#0b0b0b">The fastest, smallest, fairest sandbox on the BEAM</text>
+<text x="48" y="116" font-size="21" fill="#52514e">Lower is better (log scale). Ranked against the other BEAM sandboxes; unsandboxed options shown for reference. Method: doc/COMPARISON.md</text>
+<rect x="32" y="250" width="1544" height="64" rx="10" fill="#eef4fc"/>
+<text x="48" y="280" font-size="23" font-weight="700" fill="#2a78d6">Hyperlang</text>
+<text x="48" y="304" font-size="16" fill="#52514e">Erlang + OTP actors, no ambient authority</text>
+<text x="48" y="344" font-size="23" font-weight="600" fill="#0b0b0b">wasmex</text>
+<text x="48" y="368" font-size="16" fill="#52514e">Wasm guests (Rust) on native threads</text>
+<text x="48" y="408" font-size="23" font-weight="600" fill="#0b0b0b">Luerl</text>
+<text x="48" y="432" font-size="16" fill="#52514e">Lua interpreter</text>
+<text x="48" y="472" font-size="23" font-weight="600" fill="#0b0b0b">Dune</text>
+<text x="48" y="496" font-size="16" fill="#52514e">Elixir subset, no macros</text>
+<line x1="48" y1="516.0" x2="1560" y2="516.0" stroke="#c3c2b7" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="48" y="542.0" font-size="14" font-weight="600" fill="#898781" letter-spacing="0.5">NOT SANDBOXED (REFERENCE)</text>
+<text x="48" y="588" font-size="23" font-weight="600" fill="#52514e">erl_eval + handler</text>
+<text x="48" y="612" font-size="16" fill="#52514e">Erlang interpreter; fun os:cmd/1 escaped</text>
+<text x="48" y="652" font-size="23" font-weight="600" fill="#52514e">Peer node</text>
+<text x="48" y="676" font-size="16" fill="#52514e">full ambient authority</text>
+<text x="48" y="716" font-size="23" font-weight="600" fill="#52514e">OS process</text>
+<text x="48" y="740" font-size="16" fill="#52514e">full ambient authority</text>
+<text x="48" y="780" font-size="23" font-weight="600" fill="#52514e">Docker</text>
+<text x="48" y="804" font-size="16" fill="#52514e">container, no BEAM inside</text>
+<text x="440.0" y="188" font-size="24" font-weight="650" fill="#0b0b0b">Compute</text>
+<text x="440.0" y="216" font-size="17" fill="#52514e">fib(25), best of 3 rounds, ms</text>
+<line x1="440.0" y1="250" x2="440.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="480.2" y1="250" x2="480.2" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="520.5" y1="250" x2="520.5" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="560.8" y1="250" x2="560.8" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="601.0" y1="250" x2="601.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<text x="440.0" y="842" font-size="15" fill="#898781" text-anchor="middle">0.1 ms</text>
+<text x="520.5" y="842" font-size="15" fill="#898781" text-anchor="middle">10 ms</text>
+<text x="601.0" y="842" font-size="15" fill="#898781" text-anchor="middle">1 s</text>
+<line x1="440.0" y1="250" x2="440.0" y2="814" stroke="#c3c2b7" stroke-width="1.5"/>
+<path d="M440.0,275.0 h17.7 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-17.7 z" fill="#2a78d6" opacity="1"/>
+<text x="471.7" y="289.0" font-size="19" font-weight="700" fill="#0b0b0b">0.35 ms</text>
+<rect x="554.5" y="270.0" width="52" height="24" rx="12" fill="#2a78d6"/>
+<text x="562.5" y="287.0" font-size="15" font-weight="700" fill="#ffffff">best</text>
+<path d="M440.0,339.0 h29.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-29.5 z" fill="#b4b2a9" opacity="1"/>
+<text x="483.5" y="353.0" font-size="19" font-weight="500" fill="#0b0b0b">0.68 ms</text>
+<path d="M440.0,403.0 h113.8 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-113.8 z" fill="#b4b2a9" opacity="1"/>
+<text x="567.8" y="417.0" font-size="19" font-weight="500" fill="#0b0b0b">84.7 ms</text>
+<path d="M440.0,467.0 h134.4 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-134.4 z" fill="#b4b2a9" opacity="1"/>
+<text x="588.4" y="481.0" font-size="19" font-weight="500" fill="#0b0b0b">275 ms</text>
+<path d="M440.0,583.0 h117.8 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-117.8 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="571.8" y="597.0" font-size="19" font-weight="500" fill="#52514e">106 ms</text>
+<path d="M440.0,647.0 h16.7 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-16.7 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="470.7" y="661.0" font-size="19" font-weight="500" fill="#52514e">0.33 ms</text>
+<path d="M440.0,711.0 h19.2 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-19.2 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="473.2" y="725.0" font-size="19" font-weight="500" fill="#52514e">0.38 ms</text>
+<text x="448.0" y="788.0" font-size="16" fill="#898781">n/a</text>
+<text x="729.0" y="188" font-size="24" font-weight="650" fill="#0b0b0b">Start a tenant</text>
+<text x="729.0" y="216" font-size="17" fill="#52514e">from a pre-compiled program, ms</text>
+<line x1="729.0" y1="250" x2="729.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="755.8" y1="250" x2="755.8" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="782.7" y1="250" x2="782.7" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="809.5" y1="250" x2="809.5" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="836.3" y1="250" x2="836.3" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="863.2" y1="250" x2="863.2" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="890.0" y1="250" x2="890.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<text x="729.0" y="842" font-size="15" fill="#898781" text-anchor="middle">1 µs</text>
+<text x="809.5" y="842" font-size="15" fill="#898781" text-anchor="middle">1 ms</text>
+<text x="890.0" y="842" font-size="15" fill="#898781" text-anchor="middle">1 s</text>
+<line x1="729.0" y1="250" x2="729.0" y2="814" stroke="#c3c2b7" stroke-width="1.5"/>
+<path d="M729.0,275.0 h42.0 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-42.0 z" fill="#2a78d6" opacity="1"/>
+<text x="785.0" y="289.0" font-size="19" font-weight="700" fill="#0b0b0b">0.05 ms</text>
+<rect x="867.8" y="270.0" width="43" height="24" rx="12" fill="#f0efec"/>
+<text x="875.8" y="287.0" font-size="15" font-weight="700" fill="#52514e">2nd</text>
+<path d="M729.0,339.0 h47.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-47.6 z" fill="#b4b2a9" opacity="1"/>
+<text x="790.6" y="353.0" font-size="19" font-weight="500" fill="#0b0b0b">0.08 ms</text>
+<path d="M729.0,403.0 h35.2 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-35.2 z" fill="#b4b2a9" opacity="1"/>
+<text x="778.2" y="417.0" font-size="19" font-weight="500" fill="#0b0b0b">0.03 ms</text>
+<path d="M729.0,467.0 h66.1 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-66.1 z" fill="#b4b2a9" opacity="1"/>
+<text x="809.1" y="481.0" font-size="19" font-weight="500" fill="#0b0b0b">0.41 ms</text>
+<path d="M729.0,583.0 h18.8 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-18.8 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="761.8" y="597.0" font-size="19" font-weight="500" fill="#52514e">0.01 ms</text>
+<path d="M729.0,647.0 h131.4 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-131.4 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="874.4" y="661.0" font-size="19" font-weight="500" fill="#52514e">112 ms</text>
+<path d="M729.0,711.0 h132.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-132.6 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="875.6" y="725.0" font-size="19" font-weight="500" fill="#52514e">123 ms</text>
+<path d="M729.0,775.0 h136.9 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-136.9 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="879.9" y="789.0" font-size="19" font-weight="500" fill="#52514e">178 ms</text>
+<text x="1018.0" y="188" font-size="24" font-weight="650" fill="#0b0b0b">Memory per tenant</text>
+<text x="1018.0" y="216" font-size="17" fill="#52514e">resident, idle tenant, KiB</text>
+<line x1="1018.0" y1="250" x2="1018.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1050.2" y1="250" x2="1050.2" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1082.4" y1="250" x2="1082.4" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1114.6" y1="250" x2="1114.6" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1146.8" y1="250" x2="1146.8" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1179.0" y1="250" x2="1179.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<text x="1018.0" y="842" font-size="15" fill="#898781" text-anchor="middle">10 KiB</text>
+<text x="1082.7" y="842" font-size="15" fill="#898781" text-anchor="middle">1 MiB</text>
+<text x="1147.1" y="842" font-size="15" fill="#898781" text-anchor="middle">100 MiB</text>
+<line x1="1018.0" y1="250" x2="1018.0" y2="814" stroke="#c3c2b7" stroke-width="1.5"/>
+<path d="M1018.0,275.0 h7.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-7.6 z" fill="#2a78d6" opacity="1"/>
+<text x="1039.6" y="289.0" font-size="19" font-weight="700" fill="#0b0b0b">23 KiB</text>
+<rect x="1112.0" y="270.0" width="52" height="24" rx="12" fill="#2a78d6"/>
+<text x="1120.0" y="287.0" font-size="15" font-weight="700" fill="#ffffff">best</text>
+<path d="M1018.0,339.0 h26.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-26.6 z" fill="#b4b2a9" opacity="1"/>
+<text x="1058.6" y="353.0" font-size="19" font-weight="500" fill="#0b0b0b">89 KiB</text>
+<path d="M1018.0,403.0 h23.4 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-23.4 z" fill="#b4b2a9" opacity="1"/>
+<text x="1055.4" y="417.0" font-size="19" font-weight="500" fill="#0b0b0b">71 KiB</text>
+<path d="M1018.0,467.0 h29.4 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-29.4 z" fill="#b4b2a9" opacity="1"/>
+<text x="1061.4" y="481.0" font-size="19" font-weight="500" fill="#0b0b0b">109 KiB</text>
+<path d="M1018.0,583.0 h7.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-7.6 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="1039.6" y="597.0" font-size="19" font-weight="500" fill="#52514e">23 KiB</text>
+<path d="M1018.0,647.0 h120.9 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-120.9 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="1152.9" y="661.0" font-size="19" font-weight="500" fill="#52514e">74 MiB</text>
+<path d="M1018.0,711.0 h121.2 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-121.2 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="1153.2" y="725.0" font-size="19" font-weight="500" fill="#52514e">76 MiB</text>
+<text x="1026.0" y="788.0" font-size="16" fill="#898781">n/a</text>
+<text x="1307.0" y="188" font-size="24" font-weight="650" fill="#0b0b0b">Noisy neighbours</text>
+<text x="1307.0" y="216" font-size="17" fill="#52514e">victim p99, 16 busy tenants, ×</text>
+<line x1="1307.0" y1="250" x2="1307.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1387.5" y1="250" x2="1387.5" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="1468.0" y1="250" x2="1468.0" y2="814" stroke="#e1e0d9" stroke-width="1"/>
+<text x="1307.0" y="842" font-size="15" fill="#898781" text-anchor="middle">1×</text>
+<text x="1387.5" y="842" font-size="15" fill="#898781" text-anchor="middle">10×</text>
+<text x="1468.0" y="842" font-size="15" fill="#898781" text-anchor="middle">100×</text>
+<line x1="1307.0" y1="250" x2="1307.0" y2="814" stroke="#c3c2b7" stroke-width="1.5"/>
+<path d="M1307.0,275.0 h7.0 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-7.0 z" fill="#2a78d6" opacity="1"/>
+<text x="1328.0" y="289.0" font-size="19" font-weight="700" fill="#0b0b0b">1.37×</text>
+<rect x="1390.0" y="270.0" width="52" height="24" rx="12" fill="#2a78d6"/>
+<text x="1398.0" y="287.0" font-size="15" font-weight="700" fill="#ffffff">best</text>
+<path d="M1307.0,339.0 h48.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-48.6 z" fill="#b4b2a9" opacity="1"/>
+<text x="1369.6" y="353.0" font-size="19" font-weight="500" fill="#0b0b0b">4.5× at 4 tenants</text>
+<path d="M1307.0,403.0 h34.9 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-34.9 z" fill="#b4b2a9" opacity="1"/>
+<text x="1355.9" y="417.0" font-size="19" font-weight="500" fill="#0b0b0b">3.04×</text>
+<path d="M1307.0,467.0 h121.0 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-121.0 z" fill="#b4b2a9" opacity="1"/>
+<text x="1442.0" y="481.0" font-size="19" font-weight="500" fill="#0b0b0b">35.7×</text>
+<path d="M1307.0,583.0 h66.0 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-66.0 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="1387.0" y="597.0" font-size="19" font-weight="500" fill="#52514e">7.4×</text>
+<path d="M1307.0,647.0 h0.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-0.6 z" fill="#b4b2a9" opacity="0.55"/>
+<text x="1321.6" y="661.0" font-size="19" font-weight="500" fill="#52514e">1.14×</text>
+<text x="1315.0" y="724.0" font-size="16" fill="#898781">not measured</text>
+<text x="1315.0" y="788.0" font-size="16" fill="#898781">n/a</text>
+<text x="48" y="866" font-size="17" fill="#898781">github.com/hyperbob-labs/hyperlang</text>
+</svg>

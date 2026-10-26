@@ -1,0 +1,6 @@
+ExUnit.start(exclude: [:sandbox_fuzz])
+Code.require_file("support/door_test_support.ex", __DIR__)
+Code.require_file("support/compatibility_baseline.ex", __DIR__)
+Code.require_file("support/compatibility_audit.ex", __DIR__)
+Code.require_file("support/fake_guest_kernel.ex", __DIR__)
+Code.require_file("support/sandbox_probe.ex", __DIR__)

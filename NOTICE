@@ -1,0 +1,60 @@
+Hyperlang
+Copyright The Hyperlang Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software developed by Ericsson AB as part of
+Erlang/OTP (https://www.erlang.org), licensed under the Apache License,
+Version 2.0. The OTP copyright notices are retained in each file.
+
+Erlang/OTP sources
+------------------
+
+Hyperlang pins Erlang/OTP 29 (kernel 11.0.2, stdlib 8.0.1).
+
+Unmodified reference copies, kept in the source repository under vendor/:
+
+  vendor/otp_kernel_11_0_2/src/file.erl            (kernel 11.0.2)
+  vendor/otp_kernel_11_0_2/include/file.hrl        (kernel 11.0.2)
+  vendor/otp_stdlib_8_0_1/erl_scan.erl             (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/erl_parse.yrl            (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/erl_parse.erl            (stdlib 8.0.1, generated from erl_parse.yrl)
+  vendor/otp_stdlib_8_0_1/src/filelib.erl          (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/io_lib.erl           (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/io_lib_format.erl    (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/io_lib_fread.erl     (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/io_lib_pretty.erl    (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/gen.erl              (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/gen_server.erl       (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/gen_statem.erl       (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/gen_event.erl        (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/proc_lib.erl         (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/supervisor.erl       (stdlib 8.0.1)
+  vendor/otp_stdlib_8_0_1/src/sys.erl              (stdlib 8.0.1)
+
+Derived files, modified by the Hyperlang Authors:
+
+  src/hyperlang_otp_scan.erl
+      Derived from stdlib 8.0.1 erl_scan.erl. Renamed module; atom-producing
+      paths patched so untrusted names stay binaries. The change is recorded
+      in patches/hyperlang_otp_scan.patch.
+  src/hyperlang_otp_parse.erl
+      Derived from stdlib 8.0.1 erl_parse.erl (generated from erl_parse.yrl).
+      Renamed module; atom-producing paths patched. The change is recorded in
+      patches/hyperlang_otp_parse.patch.
+  src/hyperlang_otp_io_lib.erl
+  src/hyperlang_otp_io_lib_format.erl
+  src/hyperlang_otp_io_lib_fread.erl
+  src/hyperlang_otp_io_lib_pretty.erl
+      Derived from stdlib 8.0.1 io_lib.erl, io_lib_format.erl,
+      io_lib_fread.erl and io_lib_pretty.erl. Module names and cross-module
+      references renamed by scripts/rewrite_otp_formatting_modules.sh.
+  priv/guest_lib/gen.erl
+  priv/guest_lib/gen_server.erl
+  priv/guest_lib/gen_statem.erl
+  priv/guest_lib/gen_event.erl
+  priv/guest_lib/proc_lib.erl
+  priv/guest_lib/supervisor.erl
+  priv/guest_lib/otp_sys.erl
+      Guest ports of the stdlib 8.0.1 modules of the same name (otp_sys.erl
+      ports sys.erl). They are rewritten to run as Hyperlang guest code.

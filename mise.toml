@@ -1,0 +1,5 @@
+# Toolchain used for development and testing. The stdlib allowlist is pinned
+# to OTP 29.
+[tools]
+erlang = "29.0.2"
+elixir = "1.20.0-otp-29"
