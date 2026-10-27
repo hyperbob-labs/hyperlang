@@ -1,108 +1,103 @@
 # Hyperlang
 
 Hyperlang runs untrusted Erlang inside an Elixir host, on the same BEAM, with
-no ambient authority. A guest is ordinary Erlang source. Hyperlang compiles it
-through its own verifier into a BEAM module that can call only what the
-program declares: its own functions, a frozen stdlib allowlist, and the host
-bindings you pass in. Every run is metered for reductions, heap and wall time.
-Host-owned scopes admit and prioritise the work.
+no ambient authority. A guest is ordinary Erlang source. Hyperlang compiles
+it through its verifier into a BEAM module that can call only its own
+functions, a frozen stdlib allowlist and the host bindings you pass in. Every run is metered for
+reductions, heap and wall time. Host-owned scopes admit and prioritise the
+work.
 
-The usual advice is that the BEAM cannot do this. The Erlang/OTP secure-coding
-guide says there is "no built-in sand-boxing mechanism for running untrusted
-Erlang code", and the EEF advises an embedded language such as Lua. So teams
-reach for Luerl, WebAssembly, a restricted evaluator, or a separate node or
-OS process. Part of that advice stays true: guests still share schedulers,
-memory allocators, the atom table and the code server. Hyperlang changes the
-rest. Guest code never becomes trusted loaded code, every atom a guest can
-cause comes from a fixed set bounded by host limits, and calls outside the
-declared set cannot be expressed in the generated module.
+The Erlang/OTP secure-coding guide says there is "no built-in sand-boxing
+mechanism for running untrusted Erlang code", and the EEF advises an embedded
+language such as Lua. Teams therefore use Luerl, WebAssembly, a restricted
+evaluator, or a separate node or OS process. Hyperlang guests still share
+schedulers, memory allocators, the atom table and the code server. Hyperlang
+adds three properties:
+
+- Guest code never becomes trusted loaded code.
+- Every atom a guest can cause comes from a fixed set bounded by host limits.
+- The generated module cannot express calls outside the declared set.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/comparison_dark.svg">
-  <img alt="Hyperlang ranked against wasmex, Luerl and Dune, with erl_eval, peer nodes, OS processes and Docker as unsandboxed references. Hyperlang is best on compute (fib(25) in 0.35 ms against 0.68 ms for wasmex and 85 to 275 ms for the interpreters), best on memory (23 KiB per idle actor against 71 to 109 KiB), best on noisy neighbours (1.37x p99 slowdown against 3.0x for Luerl and 35.7x for Dune), and second on tenant start from a compiled program (0.05 ms against 0.03 ms for Luerl and about 115 ms for a child VM)." src="assets/comparison_light.svg" width="960">
+  <img alt="Hyperlang against wasmex, Luerl and Dune, with erl_eval, peer nodes, OS processes and Docker as unsandboxed references. fib(25): Hyperlang 0.35 ms, wasmex 0.68 ms, interpreters 85 to 275 ms. Idle actor memory: Hyperlang 23 KiB, others 71 to 109 KiB. Noisy-neighbour p99 slowdown: Hyperlang 1.37x, Luerl 3.0x, Dune 35.7x. Tenant start from a compiled program: Hyperlang 0.05 ms, Luerl 0.03 ms, child VM about 115 ms." src="assets/comparison_light.svg" width="960">
 </picture>
 
-Measured against those alternatives on one shared 16-core host (BEAM with 4
-schedulers, load average 9 to 32; method and raw data in
-[`doc/COMPARISON.md`](doc/COMPARISON.md)). Against the other BEAM sandboxes
-(wasmex, Luerl, Dune), Hyperlang is fastest, smallest and least disturbed by
-noisy neighbours:
+Measurements are from one shared 16-core host (BEAM with 4 schedulers, load
+average 9 to 32). Method and raw data are in
+[`doc/COMPARISON.md`](doc/COMPARISON.md). Among the BEAM sandboxes (wasmex,
+Luerl, Dune), Hyperlang is fastest, smallest and least disturbed by noisy
+neighbours:
 
 - **Compute:** guest code is compiled BEAM code. A guest `fib(25)` took
-  0.35 ms, the same as native Erlang in a peer node or OS process (0.33 to
-  0.38 ms). wasmex took 0.68 ms; Luerl, `erl_eval` and Dune took 85 to
-  275 ms.
+  0.35 ms. Native Erlang in a peer node or OS process took 0.33 to 0.38 ms,
+  wasmex 0.68 ms, and Luerl, `erl_eval` and Dune 85 to 275 ms.
 - **Memory:** an idle guest actor added 23 KiB of resident memory. A Rust
-  wasmex instance added 89 KiB, a Luerl state 71 KiB and a Dune session
-  109 KiB. A peer node or an OS `erl` process added 74 to 76 MiB.
+  wasmex instance added 89 KiB, a Luerl state 71 KiB, a Dune session
+  109 KiB, and a peer node or OS `erl` process 74 to 76 MiB.
 - **Noisy neighbours:** next to 16 CPU-bound tenants, a victim's p99 rose
-  1.4x with `Hyperlang.Scope` admission and priority classes. It rose 3.0x
-  in Luerl, 7.4x in `erl_eval` and 36x in Dune. A victim in its own peer
-  node rose 1.1x.
+  1.4x with `Hyperlang.Scope` admission and priority classes, 3.0x in Luerl,
+  7.4x in `erl_eval` and 36x in Dune. A victim in its own peer node rose 1.1x.
 - **Tenant start:** a new tenant of a compiled program answered in 0.05 ms.
-  Luerl took 0.03 ms, wasmex 0.08 ms and Dune 0.41 ms; a peer node or OS
+  Luerl took 0.03 ms, wasmex 0.08 ms and Dune 0.41 ms. A peer node or OS
   process took 111 to 123 ms to boot. Compiling a small program from source
   is a separate one-time step of about 17 ms.
 
-Each call into a guest has a fixed cost: about 21 µs for a `run/4` in the
-caller and 29 µs for an actor call. For many tiny calls, wasmex and Luerl in
-the caller are faster.
+Each call into a guest costs about 21 µs for a `run/4` in the caller and
+29 µs for an actor call. For many tiny calls, wasmex and Luerl in the caller
+are faster.
 
 ### Code you do not fully trust, inside the VM
 
-Agent systems run code that is only partly trusted: code the agent wrote,
-tools and plugins, per-tenant logic, and the agent's own steps when untrusted
-input (prompt injection, poisoned tool output) steers them. Most of it is fine.
-None of it should hold ambient authority, and a bad step must not reach the
-host, other tenants, or capabilities it was not given. Agents are long-lived,
-stateful, concurrent and supervised, which is what BEAM processes and OTP
-provide. Today the sandbox lives outside the VM: E2B uses Firecracker
-microVMs, AutoGen uses Docker containers, and Cloudflare loads V8 isolates
-([sources](doc/COMPARISON.md#partial-trust-in-agent-systems)). Hyperlang
-runs these steps as guest actors inside the VM, as ordinary Erlang that is
-capability-scoped and metered. [Running a generated tool](#running-a-generated-tool)
-shows it.
+Agent systems run partly trusted code: code the agent wrote, tools and
+plugins, per-tenant logic, and agent steps that untrusted input (prompt
+injection, poisoned tool output) can steer. None of it should hold ambient
+authority. A bad step must not reach the host, other tenants, or capabilities
+it was not given. Agents are long-lived, stateful, concurrent and supervised,
+which BEAM processes and OTP provide. Current agent sandboxes run
+outside the VM: E2B uses Firecracker microVMs, AutoGen uses Docker
+containers, and Cloudflare loads V8 isolates
+([sources](doc/COMPARISON.md#partial-trust-in-agent-systems)). Hyperlang runs
+these steps inside the VM as capability-scoped, metered guest actors written
+in ordinary Erlang. [Running a generated tool](#running-a-generated-tool)
+shows an example.
 
 ### Why the guest language is Erlang
 
 Compiling Elixir runs Elixir. Module bodies, attributes, macros, `use` and
-`@before_compile` hooks all execute during compilation, with the host's
-authority and no time bound. A sandbox that checks Elixir source from outside
-must either forbid those constructs or run untrusted code while compiling.
-Erlang source has no user code that runs at compile time. Hyperlang runs no
-preprocessor, rejects `-include`, `-define`, `-compile` and `-on_load`, and
-meters its own compile with a reduction budget. The sound path to sandboxed
-Elixir is to run the Elixir compiler itself as a guest; see
-[`doc/COMPARISON.md`](doc/COMPARISON.md#the-sound-path-to-sandboxed-elixir).
+`@before_compile` hooks execute during compilation, with the host's authority
+and no time bound. A sandbox that checks Elixir source from outside must
+either forbid those constructs or run untrusted code while compiling. Erlang
+source runs no user code at compile time. Hyperlang runs no preprocessor,
+rejects `-include`, `-define`, `-compile` and `-on_load`, and meters its own
+compile with a reduction budget. The sound path to sandboxed Elixir is to run
+the Elixir compiler itself as a guest
+([design](doc/COMPARISON.md#the-sound-path-to-sandboxed-elixir)). If you want
+to work on that, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ### How it compares
 
 | | Hyperlang | Dune | Luerl | `erl_eval` + handler | wasmex | Peer node / OS process |
 | --- | --- | --- | --- | --- | --- | --- |
 | Guest language | Erlang | Elixir subset | Lua | Erlang | Wasm | Any |
-| Ambient authority | None: rejected at compile time (P) | AST allowlist plus run-time check (S, P) | Removed Lua globals (S) | **`fun os:cmd/1` ran** (P) | Declared imports only (S) | **Full**: `os:cmd` ran (P) |
-| VM atoms added by guest code | Fixed host-bounded set; 0 after warm-up (P) | Fixed pool: +1,314, then 0 (P) | +13 for 50,000 keys (P) | **+2,000 per program** (P) | None (S) | Own table (P) |
-| Heap cap held (80 MB) | Yes, 39 ms (P) | **+270 MB**, 1.3 s (P) | Only if the host sets it (S) | Only if the host builds it (P) | Yes (P) | OS limits only |
-| Guest keeps running after its caller dies | No (P) | No (P) | **Yes**, past `max_time` (P) | **Yes** with an unlinked spawn (P) | Until its call timeout (P) | n/a |
-| Tenant start, compiled program | 0.05 ms (M) | 0.41 ms (M) | 0.03 ms (M) | 0.007 ms (M) | 0.08 ms (M) | 111–123 ms (M) |
-| `fib(25)` | 0.35 ms (M) | 275 ms (M) | 85 ms (M) | 106 ms (M) | 0.68 ms, own threads (M) | 0.33–0.38 ms, own VM (M) |
-| Memory per idle tenant | 23 KiB (M) | 109 KiB (M) | 71 KiB (M) | 23 KiB (M) | 89 KiB, Rust guest (M) | 74–76 MiB (M) |
-| Guest actors and messages | `gen_server`, `gen_statem`, channels (S) | No processes (S) | No (S) | No | No | Full OTP (S) |
+| Ambient authority | None | AST allowlist + run-time check | Lua globals removed | **`os:cmd/1` ran** | Declared imports only | **Full** |
+| VM atoms added by guest | 0 after warm-up | +1,314, then 0 | +13 for 50,000 keys | **+2,000 per program** | None | Own table |
+| 80 MB heap cap held | Yes (39 ms) | **No: +270 MB, 1.3 s** | If the host sets it | If the host builds it | Yes | OS limits only |
+| Guest outlives its caller | No | No | **Yes, past `max_time`** | **Yes, unlinked spawn** | Until call timeout | n/a |
+| `fib(25)` | 0.35 ms | 275 ms | 85 ms | 106 ms | 0.68 ms¹ | 0.33–0.38 ms¹ |
+| Memory per idle tenant | 23 KiB | 109 KiB | 71 KiB | 23 KiB | 89 KiB (Rust guest) | 74–76 MiB |
+| Tenant start, compiled program | 0.05 ms | 0.41 ms | 0.03 ms | 0.007 ms | 0.08 ms | 111–123 ms |
 
-P: a probe we ran. M: a measurement. S: the project's source or docs. Each
-cell is backed in [`doc/COMPARISON.md`](doc/COMPARISON.md). wasmex and child
-VMs run guest code on their own threads, so compare their compute times with
-care.
-
+¹ Runs on its own threads or VM, so compare with care. Evidence for every
+cell (probes, measurements, sources) is in [`doc/COMPARISON.md`](doc/COMPARISON.md).
 Guests share the VM's schedulers, allocators, garbage collector and code
 server; the [threat model](#threat-model) states what that leaves.
 
 ### Running a generated tool
 
-An agent wrote this tool at run time. Its only authority is the
-`search:query/1` binding the host declares. A step that reaches for the
-operating system fails to compile, and a step that never ends is stopped by
-its own budget.
+An agent wrote this tool at run time. Its only authority is the host-declared
+`search:query/1` binding. A step that calls the operating system fails to
+compile. A step that never ends stops at its reduction budget.
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -143,54 +138,51 @@ loop = "-module(loop).\n-export([result/1]).\nresult(X) -> result(X).\n"
 
 ## Hyperlang 101
 
-If you know Cloudflare Workers, the model will feel familiar: a program is a
-Worker script, a run is a request, bindings are `env`, and a callback actor is
-a Durable Object. This guide walks through each Workers concept and shows the
-Hyperlang equivalent next to it. The JavaScript blocks are Cloudflare
-reference code for comparison. Every Elixir block runs as written: the test
-suite extracts and executes them (`test/readme_examples_test.exs`).
+The model maps onto Cloudflare Workers: a program is a Worker script, a run
+is a request, bindings are `env`, and a callback actor is a Durable Object.
+This guide pairs each Workers concept with its Hyperlang equivalent. The
+JavaScript blocks are Cloudflare reference code. Every Elixir block runs as
+written; `test/readme_examples_test.exs` extracts and executes them.
 
-The security contract is [`doc/SECURITY_SPECIFICATION.md`](doc/SECURITY_SPECIFICATION.md),
-and [`SECURITY.md`](SECURITY.md) explains how to report a vulnerability.
-For an OS-scale host built on Hyperlang, see the companion project
-hyperbob_os, a BEAM port of the Inferno OS that runs its userland as
-Hyperlang guests.
+The security contract is [`doc/SECURITY_SPECIFICATION.md`](doc/SECURITY_SPECIFICATION.md).
+To report a vulnerability, see [`SECURITY.md`](SECURITY.md). The companion
+project hyperbob_os is an OS-scale host on Hyperlang: a BEAM port of the
+Inferno OS that runs its userland as Hyperlang guests.
 
 ## Install
 
-Add `{:hyperlang, "~> 0.1.0"}` to the `deps` list in your `mix.exs`, then
-run `mix deps.get`.
+Add `{:hyperlang, "~> 0.1.0"}` to `deps` in `mix.exs` and run `mix deps.get`.
 
-Hyperlang needs Erlang/OTP 29 (minimum and tested release) and Elixir 1.20
-or later. The stdlib allowlist and the vendored OTP sources are pinned to
-OTP 29; later OTP releases are untested.
+Hyperlang needs Erlang/OTP 29 and Elixir 1.20 or later. The stdlib allowlist
+and the vendored OTP sources are pinned to OTP 29. Later OTP releases are
+untested.
 
 ## Threat model
 
 Hyperlang enforces authority isolation for untrusted guest source inside one
 VM. A guest cannot reach any function, process, port, file, atom or code path
 that its program and run do not grant. The compiler lowers and checks every
-call before the module exists, each run is metered for reductions, heap and
-wall time, and every term that crosses the door is sanitized.
+call before the module exists. Each run is metered for reductions, heap and
+wall time. Every term that crosses the door is sanitized.
 
 `Hyperlang.Scope` adds resource isolation between tenants. Each scope has its
-own admission limits, quotas and priority class, and node-wide admission
-counts only runnable guest work, so blocked guests hold no capacity. Latency
-scopes keep a reserved slot and wake first. An isolation verification of this
+own admission limits, quotas and priority class. Node-wide admission counts
+only runnable guest work, so blocked guests hold no capacity. Latency scopes
+keep a reserved slot and wake first. An isolation verification of this
 release measured the effect on a victim tenant:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/isolation_noisy_neighbours_dark.svg">
-  <img alt="Victim p99 latency next to 0, 1, 4 and 16 noisy tenants. Without scope controls it rises to 16.8x under CPU load, 14.8x under heap pressure and 5.4x under compile load. With Hyperlang.Scope admission it stays at 1.3x, 2.3x and 1.0x.." src="assets/isolation_noisy_neighbours_light.svg" width="960">
+  <img alt="Victim p99 latency next to 0, 1, 4 and 16 noisy tenants. Without scope controls it rises to 16.8x under CPU load, 14.8x under heap pressure and 5.4x under compile load. With Hyperlang.Scope admission it stays at 1.3x, 2.3x and 1.0x." src="assets/isolation_noisy_neighbours_light.svg" width="960">
 </picture>
 
-These historical measurements precede runnable-only admission. Each point is
-the p99 of 1,000 requests from one latency-class tenant on a
-node with 8 schedulers, divided by that tenant's p99 with no neighbours. Each noisy tenant has its
-own scope and, over and over, either spins a CPU-bound loop, grows its heap
-until its heap limit kills the run, or compiles a new guest module. With
-scope controls on, the victim runs in the `:latency` class and the
-neighbours in `:background`.
+These measurements predate runnable-only admission. Each point is the p99 of
+1,000 requests from one latency-class tenant on a node with 8 schedulers,
+divided by that tenant's p99 with no neighbours. Each noisy tenant has its
+own scope and repeatedly spins a CPU-bound loop, grows its heap until its
+heap limit kills the run, or compiles a new guest module. With scope controls
+on, the victim runs in the `:latency` class and the neighbours in
+`:background`.
 
 | Noisy tenants | 0 | 1 | 4 | 16 |
 |---|---:|---:|---:|---:|
@@ -201,18 +193,18 @@ neighbours in `:background`.
 | Compile, no scope controls | 1.0x | 1.1x | 4.1x | 5.4x |
 | Compile, `Hyperlang.Scope` | 1.0x | 1.1x | 1.2x | 1.0x |
 
-The resource controls provide these guarantees:
+Resource control guarantees:
 
 - Each run has fresh reduction accounting. A spawned run's limits group is
   destroyed when the run ends: 10,000 runs leave 0 groups, processes, ports,
-  ETS tables or file descriptors behind. An actor's callbacks, and one
-  host's in-caller runs, share one limits group per process: its usage
-  restarts with every run, and the process's exit destroys it.
+  ETS tables or file descriptors behind. An actor's callbacks, and one host's
+  in-caller runs, share one limits group per process. Its usage restarts with
+  every run, and the process's exit destroys it.
 - Guest children owned by a run are killed when the run ends.
 - Timer quotas and handles belong to a host-selected scope. One scope cannot
   read or cancel another scope's timers.
-- Channels, buffers and broker heaps are charged against scope quotas
-  (1,024 channels per scope by default).
+- Channels, buffers and broker heaps count against scope quotas (1,024
+  channels per scope by default).
 - OTP actor status and crash reports never show binding state or policy
   secrets, whatever `format_status` the guest defines.
 - Internal fun application rejects host funs.
@@ -225,13 +217,12 @@ contract and its known limitations.
 
 ## Workers and Hyperlang at a glance
 
-The left column is Cloudflare Workers code. The right column is the
-equivalent Hyperlang guest, which is plain Erlang. Authority that Workers
-receive through `env` arrives in Hyperlang as static calls to named bindings
-(`kv:get/1`, `storage:put/2`). The host declares those bindings once and
-supplies them at run time. The sections after this one show the host side of
-each pair and run it. Each Erlang snippet here is copied from one of those
-runnable examples, and the test suite checks that the copies match.
+Left: Cloudflare Workers code. Right: the equivalent Hyperlang guest in plain
+Erlang. Authority that Workers get through `env` arrives as static calls to
+named bindings (`kv:get/1`, `storage:put/2`). The host declares the bindings
+once and supplies them at run time. The sections below show and run the host
+side of each pair. Each Erlang snippet is copied from one of those examples,
+and the test suite checks that the copies match.
 
 <table>
 <tr><th>Cloudflare Workers (JavaScript)</th><th>Hyperlang guest (Erlang)</th></tr>
@@ -402,7 +393,7 @@ handle_call(<<"inc">>, _From, N) ->
 
 ## The door
 
-The whole public API is four functions:
+The public API is four functions:
 
 | Function | Role |
 | --- | --- |
@@ -416,18 +407,8 @@ The whole public API is four functions:
 
 ## A Worker entrypoint is `result/1` plus `run/4`
 
-A Worker exports `fetch`. A Hyperlang program exports `result/1`, and the host
+A Worker exports `fetch`. A Hyperlang program exports `result/1`. The host
 calls it with `Hyperlang.run(spec, program, :entry, [input])`.
-
-```js
-// Cloudflare Worker
-export default {
-  async fetch(request, env, ctx) {
-    const { name } = await request.json();
-    return Response.json({ greeting: `hello ${name}` });
-  },
-};
-```
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -453,16 +434,16 @@ export default {
 %{stdout: [], reductions: _, wall_us: _} = meta
 ```
 
-The value comes back as a plain term. Inputs and outputs cross a sanitizer:
-binaries, numbers, lists, tuples, maps, and allowlisted atoms pass; pids,
-ports, references, and funs do not. `terms: %{public: :erlang}` selects the
-Erlang term profile used throughout this guide. Without it, the default
-profile projects terms to a JSON-safe shape (binaries become
-`%{"$binary" => base64}`), which suits hosts that serialize results.
+The value comes back as a plain term. Inputs and outputs cross a sanitizer.
+Binaries, numbers, lists, tuples, maps and allowlisted atoms pass. Pids,
+ports, references and funs are rejected. `terms: %{public: :erlang}` selects
+the Erlang term profile used in this guide. The default profile projects
+terms to a JSON-safe shape (binaries become `%{"$binary" => base64}`) for
+hosts that serialize results.
 
-A program can also declare named exports, the analog of RPC methods on a
-`WorkerEntrypoint`. Only exports the manifest declares are callable; a source
-`-export` attribute alone grants nothing.
+Named exports correspond to RPC methods on a `WorkerEntrypoint`. Only exports
+the manifest declares are callable. A source `-export` attribute alone grants
+nothing.
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -483,8 +464,8 @@ A program can also declare named exports, the analog of RPC methods on a
 
 In Workers, `wrangler.jsonc` declares a binding by name and the code calls
 `env.KV.get(key)`. In Hyperlang, a binding is a trusted host module. The
-program manifest names it once, and guest code calls it as a static module
-call, `kv:get(Key)`.
+manifest names it once. Guest code calls it as a static module call,
+`kv:get(Key)`.
 
 ```js
 // wrangler.jsonc: { "kv_namespaces": [{ "binding": "KV", "id": "..." }] }
@@ -539,31 +520,23 @@ spec = %{bindings: %{"kv" => {Readme.KV, %{table: table}}}}
 {:ok, "hi", _meta} = Hyperlang.run(spec, program, :entry, ["greeting"])
 ```
 
-`exports/0` is read once, by `Hyperlang.program/1`. The resulting MFA set
-(`kv:get/1`, `kv:put/2`) is pinned into the program and its hash. A call to
-any other `kv:` function is a compile error. At run time, `spec.bindings`
-must name exactly the declared bindings with the same modules, or the run
-fails before the guest starts.
+`Hyperlang.program/1` reads `exports/0` once and pins the MFA set
+(`kv:get/1`, `kv:put/2`) into the program and its hash. A call to any other
+`kv:` function is a compile error. At run time, `spec.bindings` must name
+exactly the declared bindings with the same modules, or the run fails before
+the guest starts.
 
-An export may carry options: `{:get, 1, limits: %{max_binary_bytes: 4096}}`
-caps argument and return sizes, and `{:now_ms, 0, nondeterministic: true}`
-marks a call that the manifest must allow with
-`capabilities: %{nondeterminism: true}`.
+Export options:
+
+- `{:get, 1, limits: %{max_binary_bytes: 4096}}` caps argument and return
+  sizes.
+- `{:now_ms, 0, nondeterministic: true}` marks a call that the manifest must
+  allow with `capabilities: %{nondeterminism: true}`.
 
 ## Secrets and vars live in binding state
 
-A Worker reads secrets from `env.API_TOKEN`. In Hyperlang, the binding's
-`state` is the place for them. State goes to `call/3` and never reaches the
-guest.
-
-```js
-export default {
-  async fetch(request, env) {
-    const sig = await sign(env.API_TOKEN, "payload");
-    return new Response(sig);
-  },
-};
-```
+A Worker reads secrets from `env.API_TOKEN`. In Hyperlang, secrets go in the
+binding's `state`. State goes to `call/3` and never reaches the guest.
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -592,18 +565,8 @@ spec = %{bindings: %{"signer" => {Readme.Signer, %{token: "s3cret"}}}}
 
 ## `console.log` and Tail Workers are `io:format` and `meta.stdout`
 
-Guest `io:format` output is captured, sanitized, and bounded, then returned
-with the result. A host can forward it to its own logger, which is the role a
-Tail Worker plays.
-
-```js
-export default {
-  async fetch(request) {
-    console.log("pricing", "A1");
-    return new Response("42");
-  },
-};
-```
+Guest `io:format` output is captured, sanitized, bounded and returned with
+the result. A host can forward it to its own logger, as a Tail Worker does.
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -629,9 +592,9 @@ true = reductions > 0
 ## CPU and memory limits are reductions, heap, and wall time
 
 Workers cap CPU time and memory per request. Hyperlang caps reductions
-(`max_reductions`), heap words (`heap_words`), and wall time
-(`wall_ms`) per run, set in `spec.policy`. A run that crosses a limit returns
-a sanitized error with a fixed category.
+(`max_reductions`), heap words (`heap_words`) and wall time (`wall_ms`) per
+run, set in `spec.policy`. A run that crosses a limit returns a sanitized
+error with a fixed category.
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -658,14 +621,14 @@ a sanitized error with a fixed category.
 {:ok, 7, _meta} = Hyperlang.run(%{policy: %{heap_words: 200_000}}, program, :entry, [7])
 ```
 
-Limits are counted in reductions, not CPU milliseconds, so the same program
-and input hit the same limit on every run.
+Limits count reductions, so the same program and input hit the same limit on
+every run.
 
-Compilation follows the same rule. The manifest limit
+Compilation is metered the same way. The manifest limit
 `max_compile_reductions` caps the reductions of the compile worker (parse,
-verification, code generation and the OTP compiler), and `max_compile_ms` is a
+verification, code generation and the OTP compiler). `max_compile_ms` is a
 wall-clock backstop for work that does not execute reductions. A source is
-admitted or rejected the same way on an idle and on a loaded host.
+admitted or rejected the same way on an idle host and on a loaded host.
 
 ## Worker Loader `LOADER.get` is `Hyperlang.program(key, loader)`
 
@@ -690,43 +653,26 @@ end
 {:ok, 10, _meta} = Hyperlang.run(%{}, program, :entry, [5])
 ```
 
-Programs are content-addressed: the same source and manifest always produce
+Programs are content-addressed. The same source and manifest always produce
 an equal program value.
 
 ## A Durable Object is a callback actor plus a storage binding
 
 A Durable Object is a single-threaded object with durable storage. Hyperlang
-builds the same shape from parts you already have:
+builds the same shape from existing parts:
 
-- `Hyperlang.module(program)` is a confined `GenServer` callback module. The
-  actor runs one callback at a time, so it has an input gate without any
-  extra machinery.
-- Storage is an ordinary binding passed in the spec, for example
-  `{MyHost.Storage, %{ns: actor_id}}`. Binding calls are synchronous inside
-  the callback, so a write-through storage binding returns only after the
-  write is durable. That is the output gate.
-- In-memory state is a cache. `init/1` reloads it from storage, so an actor
-  that stops or crashes restarts with the state its storage holds. This plays
-  the role of `blockConcurrencyWhile` in a constructor.
-- Limits from `spec.policy` apply to every callback with no host wiring:
+- **Input gate:** `Hyperlang.module(program)` is a confined `GenServer`
+  callback module. The actor runs one callback at a time.
+- **Output gate:** storage is an ordinary binding passed in the spec, for
+  example `{MyHost.Storage, %{ns: actor_id}}`. Binding calls are synchronous
+  inside the callback, so a write-through storage binding returns only after
+  the write is durable.
+- **`blockConcurrencyWhile`:** in-memory state is a cache that `init/1`
+  reloads from storage. An actor that stops or crashes restarts with the
+  state its storage holds.
+- **Limits:** `spec.policy` applies to every callback with no host wiring:
   `wall_ms` and `max_reductions` per callback, `rate` and `ceiling` for the
   actor's lifetime.
-
-```js
-export class Counter extends DurableObject {
-  constructor(ctx, env) {
-    super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => {
-      this.n = (await ctx.storage.get("n")) ?? 0;
-    });
-  }
-  async inc() {
-    this.n += 1;
-    await this.ctx.storage.put("n", this.n);
-    return this.n;
-  }
-}
-```
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -787,16 +733,16 @@ spec = %{bindings: %{"storage" => {Readme.Storage, %{table: table, ns: "counter-
 :ok = GenServer.stop(pid)
 ```
 
-The host owns everything around the actor: the id-to-process registry
-(`idFromName`), when to start and stop actors, and where storage lives. An
-alarm is another binding: the guest asks the host to record one, and the host
-delivers it later as a message. The default guest profile has no timers.
+The host owns the id-to-process registry (`idFromName`), when actors start
+and stop, and where storage lives. An alarm is another binding. The guest
+asks the host to record one, and the host delivers it later as a message. The
+default guest profile has no timers.
 
 ## `vitest-pool-workers` is `Hyperlang.Test`
 
-`Hyperlang.Test` compiles guests, fakes bindings, runs exports, and starts
-actors, using only the public door. A fake binding is a plain map of
-functions; the kit backs it with a generated `Hyperlang.Binding` module.
+`Hyperlang.Test` compiles guests, fakes bindings, runs exports and starts
+actors through the public door only. A fake binding is a map of functions,
+which the kit backs with a generated `Hyperlang.Binding` module.
 
 ```js
 // vitest.config.ts declares bindings; tests import from "cloudflare:test"
@@ -824,8 +770,7 @@ program = program!(source, Map.put(manifest, :bindings, catalog))
 {:ok, 42, _meta} = run(program, :entry, ["A1"], bindings: catalog)
 ```
 
-`start_actor!/3` starts a callback actor with `bindings:` and `policy:` the
-same way.
+`start_actor!/3` starts a callback actor with `bindings:` and `policy:`.
 
 ## Where Hyperlang deliberately differs
 
@@ -833,27 +778,32 @@ same way.
   metered call, so nothing interleaves and no input-gate machinery is needed.
   Background work belongs to the host: record a durable intent, or have the
   actor cast to itself.
-- **No ambient `fetch` or outbound network.** A guest has no network unless a
-  binding grants it, and that binding does its own checks host-side.
+- **No ambient `fetch` or outbound network.** A guest has network access only
+  through a binding, which does its own checks host-side.
 - **No `env` value in the guest.** Bindings are static calls such as
-  `kv:get(K)`, never a term the guest can store, pass, or call dynamically.
-  The verifier rejects dynamic `M:F(...)` calls.
+  `kv:get(K)`. The guest cannot store, pass or dynamically call them. The
+  verifier rejects dynamic `M:F(...)` calls.
 - **No persisted live capability stubs.** A guest cannot save a binding and
-  redeem it later. Authority is re-supplied by the host on every run.
-- **Reductions, not CPU milliseconds.** Reduction limits are deterministic
-  enough to test exactly.
-- **Allowlisted atoms.** Atoms are a bounded, program-declared universe
-  (`terms.allowed_atoms`). A run's `policy.atoms` may narrow that set but
-  never widen it. Workers have no atom table to protect; the BEAM does.
-- **No WebSocket hibernation.** BEAM processes are cheap; an idle actor can
-  simply be stopped and restarted from storage.
-- **Child isolates are a host concern.** Only the host starts programs and
-  actors; a guest cannot spawn another program.
+  redeem it later. The host re-supplies authority on every run.
+- **Reductions instead of CPU milliseconds.** Reduction limits are
+  deterministic enough to test exactly.
+- **Allowlisted atoms.** The program declares a bounded atom set
+  (`terms.allowed_atoms`). A run's `policy.atoms` may narrow it and never
+  widen it. Workers have no atom table to protect; the BEAM does.
+- **No WebSocket hibernation.** BEAM processes are cheap. An idle actor can
+  be stopped and restarted from storage.
+- **Child processes and programs go through host hooks.** A guest's `spawn`,
+  `spawn_link` and `spawn_monitor` work only when the host installs a spawn
+  hook. The child runs the same program's code, is metered as part of the
+  run, and dies with it unless the hook takes over metering. A guest starts
+  another program only through an exec hook or binding the host grants, as
+  hyperbob_os does for `exec`. The host chooses the program and its
+  authority. Only host code loads programs.
 
 ## Standard library calls
 
 Hyperlang admits a frozen allowlist of Erlang/OTP stdlib functions. Allowed
-calls are the real OTP functions, behind argument and result sanitization.
+calls run the real OTP functions behind argument and result sanitization.
 
 <!-- hyperlang:example run -->
 ```elixir
@@ -876,25 +826,23 @@ calls are the real OTP functions, behind argument and result sanitization.
 {:ok, {6, 7, "bxnxnx"}, _meta} = Hyperlang.run(%{}, program, :entry, [nil])
 ```
 
-Live clocks and entropy (`erlang:system_time/0,1`, `erlang:monotonic_time/0,1`,
-`calendar:universal_time/0`, `rand:mwc59_seed/0`, `sys:millisec/0`,
-local-time-zone conversions)
-require `capabilities: %{nondeterminism: true}`. Ambient authority such as
-`os:*`, raw `file:*`, ports, ETS, code loading, dynamic `apply`, and NIF
-loading is rejected at compile time.
+Live clocks and entropy require `capabilities: %{nondeterminism: true}`:
+`erlang:system_time/0,1`, `erlang:monotonic_time/0,1`,
+`calendar:universal_time/0`, `rand:mwc59_seed/0`, `sys:millisec/0` and
+local-time-zone conversions. The compiler rejects ambient authority: `os:*`,
+raw `file:*`, ports, ETS, code loading, dynamic `apply` and NIF loading.
 
-`io:format/*`, `io_lib:format/*`, and float formatting run through vendored,
-pinned OTP formatting code behind Hyperlang wrappers, so output stays bounded,
-cannot mint atoms, and never renders a fun. Raw OTP JSON encoders are rejected; a host that needs
-JSON provides it as a binding.
+`io:format/*`, `io_lib:format/*` and float formatting run vendored, pinned
+OTP formatting code behind Hyperlang wrappers. Output stays bounded, cannot
+mint atoms and never renders a fun. Raw OTP JSON encoders are rejected. A
+host that needs JSON provides it as a binding.
 
 ## Filesystem capability
 
-A manifest can enable a mediated virtual filesystem. Guest code then uses
-standard `file:*` and `filelib:*` calls against virtual paths; there is no
-guest-visible filesystem module. These examples run against a manifest with a
-readable `/data` mount and a writable `/work` mount (see the test that
-consumes `hyperlang:example compile` markers):
+A manifest can enable a mediated virtual filesystem. Guest code uses standard
+`file:*` and `filelib:*` calls on virtual paths. No filesystem module is
+visible to the guest. The test suite runs these examples against a manifest
+with a readable `/data` mount and a writable `/work` mount:
 
 <!-- hyperlang:example compile -->
 ```erlang
@@ -911,18 +859,20 @@ result(_) ->
     lists:sort(Names).
 ```
 
-The supported `file:*` subset is sequential and virtual-path based:
-`read_file/1`, `write_file/2,3`, `list_dir/1`, `make_dir/1`, `del_dir/1`,
-`delete/1`, `rename/2`, `read_file_info/1`, `read_link_info/1`, and, with
-handle compatibility enabled, `open/2`, `read/2`, `write/2`, and `close/1`.
-Handles are opaque guest terms. Mount permissions, byte limits, and entry
-limits are enforced on every call. A host can instead supply a Plan 9 style
-syscall facade through `sys:*` with `spec.syscall`.
+The supported `file:*` subset is sequential and uses virtual paths:
 
-Existing symlinks in host-backed mounts follow standard host semantics, and
-guests cannot create links. Do not mount a host directory whose symlinks point
-to paths the guest must not read; use memory or snapshot mounts for strict
-fixtures.
+- `read_file/1`, `write_file/2,3`, `list_dir/1`, `make_dir/1`, `del_dir/1`,
+  `delete/1`, `rename/2`, `read_file_info/1`, `read_link_info/1`.
+- With handle compatibility enabled: `open/2`, `read/2`, `write/2`,
+  `close/1`. Handles are opaque guest terms.
+
+Every call enforces mount permissions, byte limits and entry limits. A host
+can instead supply a Plan 9 style syscall facade through `sys:*` with
+`spec.syscall`.
+
+Existing symlinks in host-backed mounts follow host semantics. Guests cannot
+create links. Do not mount a host directory whose symlinks point to paths the
+guest must not read. Use memory or snapshot mounts for strict fixtures.
 
 ## Run the tests
 
@@ -930,11 +880,10 @@ fixtures.
 mix test
 ```
 
-The opt-in isolation stress probes are described in
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md) describes the opt-in isolation stress
+probes.
 
 ## License
 
-Hyperlang is licensed under the Apache License, Version 2.0. See
-[`LICENSE`](LICENSE) and [`NOTICE`](NOTICE), which credits the vendored
-Erlang/OTP sources.
+Apache License, Version 2.0. See [`LICENSE`](LICENSE) and
+[`NOTICE`](NOTICE), which credits the vendored Erlang/OTP sources.
