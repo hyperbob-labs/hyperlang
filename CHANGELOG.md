@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-First public release. The companion OS hyperbob_os pins this version.
+First public release.
 
 ### Public API
 
@@ -20,8 +20,7 @@ The door:
 
 Host contracts and tools:
 
-- `Hyperlang.Program`: the opaque, content-addressed program struct. Its
-  `metadata` has no `door_contract` key.
+- `Hyperlang.Program`: the opaque, content-addressed program struct.
 - `Hyperlang.Binding`: behaviour for host capabilities (`exports/0`,
   `call/3`). Export options are `limits`, `nondeterministic`, `effects` and
   `docs`.
@@ -50,8 +49,7 @@ Run spec keys: `bindings`, `policy` and `syscall`. Policy covers
 `max_reductions`/`budget`, `heap_words`, `wall_ms`, `atoms`, `scope`, and
 actor-lifetime `rate` and `ceiling`.
 
-Other modules are internal. hyperbob_os calls some of them directly; they
-are not covered by version guarantees.
+Other modules are internal and are not covered by version guarantees.
 
 ### Isolation guarantees
 
