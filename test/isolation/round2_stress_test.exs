@@ -153,19 +153,31 @@ defmodule Hyperlang.Isolation.Round2StressTest do
     assert Enum.all?(runtime_rows, &is_integer(&1.p999_us))
     assert Enum.all?(extra_rows, &is_integer(&1.p999_us))
 
-    # Admission correctness is asserted in the default suite. These shared-VM
-    # tail measurements are evidence, not a hard real-time guarantee.
-    for mode <- [:cpu, :channel] do
-      rows = runtime_rows ++ extra_rows
-      unloaded = Enum.find(rows, &(&1.mode == mode and &1.tenants == 0))
-      loaded = Enum.find(rows, &(&1.mode == mode and &1.tenants == 64))
+    # Admission correctness is asserted in the default suite. The matrix rows
+    # above are sequential evidence. The 3x bounds are asserted on paired
+    # measurements: interleaved unloaded/loaded blocks with host stalls
+    # excluded by measurement (see `Contention.paired/2`).
+    paired =
+      for mode <- [:cpu, :channel] do
+        session = Round2Peer.start(schedulers: 4)
 
-      assert loaded.p99_us <= unloaded.p99_us * 3
+        try do
+          load_before = elem(System.cmd("uptime", []), 0)
 
-      IO.puts(
-        "#{mode}64 p99/unloaded: #{loaded.p99_us}/#{unloaded.p99_us} = #{loaded.p99_us / unloaded.p99_us}"
-      )
-    end
+          assert %{result: row} =
+                   Round2Peer.call(session, :paired_contention, [mode, 64], 120_000)
+
+          Map.merge(row, %{
+            load_before: load_before,
+            load_after: elem(System.cmd("uptime", []), 0)
+          })
+        after
+          Round2Peer.stop(session)
+        end
+      end
+
+    save("latency_paired_64", paired)
+    Enum.each(paired, &assert_paired_bound/1)
   end
 
   @tag :isolation_finding
@@ -176,22 +188,18 @@ defmodule Hyperlang.Isolation.Round2StressTest do
 
         try do
           load_before = elem(System.cmd("uptime", []), 0)
-          assert %{result: unloaded} = Round2Peer.call(session, :noisy_extra, [:channel, 0])
-          load_between = elem(System.cmd("uptime", []), 0)
-          assert %{result: loaded} = Round2Peer.call(session, :noisy_extra, [:channel, 64])
 
-          row = %{
-            trial: trial,
-            unloaded: unloaded,
-            loaded: loaded,
-            load_before: load_before,
-            load_between: load_between,
-            load_after: elem(System.cmd("uptime", []), 0)
-          }
+          assert %{result: row} =
+                   Round2Peer.call(session, :paired_contention, [:channel, 64], 120_000)
+
+          row =
+            Map.merge(row, %{
+              trial: trial,
+              load_before: load_before,
+              load_after: elem(System.cmd("uptime", []), 0)
+            })
 
           save("channel64_trial_#{trial}", row)
-          assert unloaded.outcomes == %{ok: 1000}
-          assert loaded.outcomes == %{ok: 1000}
           row
         after
           Round2Peer.stop(session)
@@ -199,7 +207,7 @@ defmodule Hyperlang.Isolation.Round2StressTest do
       end
 
     save("channel64_trials", trials)
-    for row <- trials, do: assert(row.loaded.p99_us <= row.unloaded.p99_us * 3)
+    Enum.each(trials, &assert_paired_bound/1)
   end
 
   test "five fresh 16-tenant heap trials and throttle-to-kill reaction distributions" do
@@ -316,6 +324,29 @@ defmodule Hyperlang.Isolation.Round2StressTest do
     sum_xx = Enum.sum(Enum.map(points, fn {x, _y} -> x * x end))
     sum_xy = Enum.sum(Enum.map(points, fn {x, y} -> x * y end))
     (n * sum_xy - sum_x * sum_y) / (n * sum_xx - sum_x * sum_x)
+  end
+
+  # Every request succeeds. Each cell keeps at least half of its requests
+  # after the host exclusions in `Contention.paired/2`. The kept loaded p99 is
+  # at most three times the kept unloaded p99.
+  defp assert_paired_bound(row) do
+    %{unloaded: unloaded, loaded: loaded} = row
+
+    IO.puts(
+      "#{row.mode}64 paired p99 loaded/unloaded: #{inspect(loaded.p99_us)}/#{inspect(unloaded.p99_us)}; " <>
+        "kept #{unloaded.kept}/#{loaded.kept} of #{unloaded.samples}; host-starved loaded blocks " <>
+        "#{row.starved_blocks}; stalled ticks #{row.stalled_ticks}/#{row.ticks}; " <>
+        "raw p99 #{loaded.raw_p99_us}/#{unloaded.raw_p99_us}"
+    )
+
+    assert unloaded.outcomes == %{ok: unloaded.samples}
+    assert loaded.outcomes == %{ok: loaded.samples}
+
+    assert row.valid?,
+           "host interference left fewer than #{row.min_kept} requests in a cell; " <>
+             "the trial cannot test the bound"
+
+    assert loaded.p99_us <= unloaded.p99_us * 3
   end
 
   defp save(name, data) do

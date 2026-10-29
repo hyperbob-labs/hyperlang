@@ -201,8 +201,10 @@ channels.
   release the permit before blocking and reacquire before guest execution.
   Native receives retain their existing permit for at most a one-millisecond
   probe (zero for after-zero), then release before any remaining wait.
-  Uncontended resumption atomically inserts an owned ETS slot. One lifetime
-  monitor survives all handoffs; no monitor is created per block. A spawned
+  Uncontended resumption atomically inserts an owned ETS slot. It checks that
+  the lifetime's Scope server is still the registered one, and makes no call
+  and sends no signal to it. One lifetime monitor survives all handoffs; no
+  monitor is created per block. A spawned
   run worker opens its lifetime with its scope membership and retires it,
   together with the run's live lease, when it detaches. Its wall deadline,
   ceiling and children are a slot of its run's limits group: arming the slot
@@ -248,7 +250,9 @@ channels.
   without polling every idle scope. Registry charges measured hot metadata
   work to the allocating scope. Throttled allocation waits outside Registry,
   releases runnable capacity, and cannot resume into a reused controller.
-  Registry retains one owner for atomic alias/fork/cleanup operations.
+  Registry retains one owner for atomic alias/fork/cleanup operations. It
+  replies to each request and then yields, so a request backlog holds a
+  scheduler for one request at a time, not for a full time slice.
 - Priority: guest workers and compiles run at `low` process priority by
   default. A scope configured with the `latency` class runs at `normal`.
   Trusted host doors retain host priority. Broker startup has separate
@@ -261,7 +265,9 @@ channels.
   Their callers wait for the reply at `high` process priority and return to
   their own priority on wake-up. A latency-class run worker starts at `high`
   and takes `normal` before any other work; its caller also waits for the
-  worker's reply at `high`. Guest code never runs above its class. Scope and
+  worker's reply at `high` and flushes the worker monitor before it drops
+  back, because a flushing demonitor can reschedule the caller. Guest code
+  never runs above its class. Scope and
   Limits wake at `high` only while their mailbox is empty and handle every
   message at `normal`: a backlog competes at `normal`, and one handler runs at
   most the rest of one time slice at `high`.
@@ -728,22 +734,54 @@ verification of this release measured the following residual effects:
   remove per-allocation/free traffic from shared Scope. Channel-only
   sampling stays local; rate/churn policies and heap violations report for
   enforcement. Registry retains one owner for atomic alias/fork/cleanup and
-  charges measured hot metadata work to the allocating scope. On a host at
-  load average 7-8, three four-scheduler channel64 trials measured p99 ratios
-  of 2.15x, 2.55x and 2.01x unloaded (1,000 requests per cell; unloaded
-  145/140/137 microseconds, loaded 312/357/275 microseconds), and the full
-  matrix measured 289/144 microseconds (2.01x), with five Scope/Limits
-  handoffs per victim request (originally twelve). A spawned victim request
-  now waits on two (caller admission and worker attach); at load average
-  65-99 both this code and the five-handoff code exceed 3x, with lower loaded
-  p99 for the two-handoff code in interleaved trials. The bound depends on
-  host CPU headroom: at load average 12-13 the same trials measured 2.7x-6.2x
-  (unmodified code: 5.7x-9.2x). In those runs, trivial BEAM code reported
-  2-14 ms `long_schedule` events, so the operating system descheduled
-  scheduler threads; the BEAM cannot bound that delay. Registry is the next
-  shared contention point: running it at `low` priority moved loaded p99 by
-  about 5-15 percent. Free releases logical aliases and quotas
-  before physical retirement completes; trusted close hooks can delay cleanup.
+  charges measured hot metadata work to the allocating scope. Free releases
+  logical aliases and quotas before physical retirement completes; trusted
+  close hooks can delay cleanup.
+
+  The R2-4 bound (`test/isolation/round2_stress_test.exs`) is: with 64
+  channel tenants on four schedulers, a latency-class victim's p99 is at most
+  three times its p99 with no tenants. The measurement
+  (`Hyperlang.Isolation.Contention.paired/2`) is:
+  - Interleaving. Unloaded and loaded blocks of 250 requests alternate in
+    ABBA order, 5,000 requests per cell. Each loaded block starts 64 fresh
+    tenants and stops them afterwards. Each block starts on a VM with no
+    other runnable process for 1 ms, and its first 20 requests are not
+    recorded.
+  - Stall exclusion. A max-priority ticker bound to each scheduler measures
+    its 1 ms timer delay against the timer's millisecond boundary. A
+    request that overlaps a delay of 500 microseconds or more on any
+    scheduler is excluded. Run-queue and server queueing cannot delay a
+    max-priority tick, so they stay in the kept requests.
+  - CPU-share exclusion. A loaded block is excluded when the operating
+    system gave the VM less than 75 percent of the time its schedulers were
+    busy (user plus system CPU time from `ps`, divided by
+    `scheduler_wall_time` active time).
+  - Validity. A trial fails as uninformative when either cell keeps fewer
+    than 2,500 requests.
+  The channel64 trial test runs three fresh trials; the matrix test asserts
+  one paired cpu64 trial and one paired channel64 trial, and records its
+  sequential rows as evidence only.
+
+  Three BEAM-side waits on the victim path were removed. The local resume
+  check called `Process.alive?/1` on Scope, which waits for a busy Scope to
+  handle a signal. A latency caller dropped to `normal` before its flushing
+  demonitor, which can reschedule it behind every runnable process. Registry
+  served dozens of requests per time slice and held a scheduler for up to
+  about 300 microseconds. In interleaved runs against the previous code on
+  the same harness at load average 5, channel64 p99 ratios were 2.20x-2.31x
+  (previous code 3.45x-3.81x). In ten consecutive runs of each R2-4 test at
+  load average 4-7, every trial passed: channel64 2.03x-2.58x, cpu64
+  1.09x-1.31x. Registry's yield lowered aggregate 64-tenant channel
+  allocation/free throughput by about 11 percent and single-tenant
+  throughput by about 2 percent.
+
+  The bound depends on host CPU headroom. On the 16-core development host,
+  four busy scheduler threads received 74-92 percent of their CPU time at
+  load average 6 and 38-75 percent at load average 10-16. A loaded block's
+  p99 rises as its CPU share falls (about 250-350 microseconds at 0.8-0.9,
+  600-2,200 microseconds at 0.4-0.6). At load average 12 and above most
+  trials keep too few loaded blocks and fail as uninformative; the BEAM
+  cannot bound that delay.
 - Receive selection. Matched and timeout bodies reacquire before execution.
   The native selective-receive matcher and guards in a long wait still run
   before continuation reacquisition. Strict permit coverage of that selection

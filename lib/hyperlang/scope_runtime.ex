@@ -97,15 +97,19 @@ defmodule Hyperlang.Scope.Runtime do
     wake(gate, server)
   end
 
+  # The registered name tells whether the token's Scope server is still the
+  # live one. `Process.alive?/1` would wait for the server to handle a signal
+  # whenever it has unprocessed messages, which puts a hidden server round trip
+  # on every local resume while Scope is busy.
   def valid?({_, _, cell, control, _, server, _}) do
-    flags(cell) == @active and :atomics.get(control, 1) == 0 and Process.alive?(server)
+    flags(cell) == @active and :atomics.get(control, 1) == 0 and current_server?(server)
   end
 
   def try_resume({token, gate, {cell, _, _} = state, control, background?, server, limit}) do
     old = :atomics.get(cell, 1)
 
     cond do
-      not Process.alive?(server) ->
+      not current_server?(server) ->
         :slow
 
       band(old, @active) != 0 ->
@@ -182,6 +186,8 @@ defmodule Hyperlang.Scope.Runtime do
       )
     end
   end
+
+  defp current_server?(server), do: Process.whereis(Hyperlang.Scope) == server
 
   defp wake(gate, server) do
     if :atomics.get(gate, 1) != 0, do: send(server, :runtime_ready)

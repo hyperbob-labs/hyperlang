@@ -173,25 +173,25 @@ release measured the effect on a victim tenant:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/isolation_noisy_neighbours_dark.svg">
-  <img alt="Victim p99 latency next to 0, 1, 4 and 16 noisy tenants. Without scope controls it rises to 16.8x under CPU load, 14.8x under heap pressure and 5.4x under compile load. With Hyperlang.Scope admission it stays at 1.3x, 2.3x and 1.0x." src="assets/isolation_noisy_neighbours_light.svg" width="960">
+  <img alt="Victim p99 latency next to 0, 1, 4 and 16 noisy tenants. With neighbours that have no scope policy it rises to 1.8x under CPU load, 9.4x under heap pressure and 1.4x under compile load. With the neighbours in background scopes with quotas it stays at 1.1x, 1.1x and 1.0x." src="assets/isolation_noisy_neighbours_light.svg" width="960">
 </picture>
 
-These measurements predate runnable-only admission. Each point is the p99 of
-1,000 requests from one latency-class tenant on a node with 8 schedulers,
-divided by that tenant's p99 with no neighbours. Each noisy tenant has its
-own scope and repeatedly spins a CPU-bound loop, grows its heap until its
-heap limit kills the run, or compiles a new guest module. With scope controls
-on, the victim runs in the `:latency` class and the neighbours in
-`:background`.
+Each point is the p99 of 1,000 requests from one latency-class tenant on a
+node with 4 schedulers, divided by that tenant's p99 with no neighbours, and
+is the median of three runs. Each noisy tenant repeatedly spins a CPU-bound
+loop, grows its heap until its heap limit kills the run, or compiles a new
+guest module. The victim keeps its reserved latency slot in both series. The
+neighbours either have no scope policy or each run in their own
+`:background` scope with a CPU, heap-churn or compile quota.
 
 | Noisy tenants | 0 | 1 | 4 | 16 |
 |---|---:|---:|---:|---:|
-| CPU, no scope controls | 1.0x | 1.0x | 3.8x | 16.8x |
-| CPU, `Hyperlang.Scope` | 1.0x | 0.9x | 0.9x | 1.3x |
-| Heap, no scope controls | 1.0x | 1.4x | 7.7x | 14.8x |
-| Heap, `Hyperlang.Scope` | 1.0x | 1.0x | 1.1x | 2.3x |
-| Compile, no scope controls | 1.0x | 1.1x | 4.1x | 5.4x |
-| Compile, `Hyperlang.Scope` | 1.0x | 1.1x | 1.2x | 1.0x |
+| CPU, no neighbour policy | 1.0x | 1.0x | 1.8x | 1.8x |
+| CPU, background scopes | 1.0x | 1.3x | 1.1x | 1.1x |
+| Heap, no neighbour policy | 1.0x | 1.0x | 4.3x | 9.4x |
+| Heap, background scopes | 1.0x | 0.9x | 1.0x | 1.1x |
+| Compile, no neighbour policy | 1.0x | 1.0x | 1.3x | 1.4x |
+| Compile, background scopes | 1.0x | 1.0x | 1.0x | 1.0x |
 
 Resource control guarantees:
 

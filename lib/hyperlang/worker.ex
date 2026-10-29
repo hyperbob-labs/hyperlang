@@ -645,7 +645,10 @@ defmodule Hyperlang.Worker do
   # A worker replies only after it deleted its limits group and released the
   # offered lease with its membership. Any other exit leaves both to the caller.
   # A latency-class caller waits at high priority, so the worker's reply resumes
-  # it without queueing behind background processes; it drops back on wake-up.
+  # it without queueing behind background processes; it drops back once the
+  # monitor is flushed. A flushing demonitor can reschedule the caller to
+  # handle its pending signals, and at normal priority that queues it behind
+  # every runnable background process.
   defp await_worker_reply(stored, ref, pid, mon, watcher, cancel_watcher, call_id, runtime, lease) do
     previous =
       if Hyperlang.Scope.priority(runtime.host_scope) == :normal,
@@ -653,8 +656,12 @@ defmodule Hyperlang.Worker do
 
     received =
       receive do
-        {^ref, reply} -> {:reply, reply}
-        {:DOWN, ^mon, :process, ^pid, reason} -> {:down, reason}
+        {^ref, reply} ->
+          Process.demonitor(mon, [:flush])
+          {:reply, reply}
+
+        {:DOWN, ^mon, :process, ^pid, reason} ->
+          {:down, reason}
       end
 
     if previous, do: Process.flag(:priority, previous)
@@ -662,7 +669,7 @@ defmodule Hyperlang.Worker do
     case received do
       {:reply, reply} ->
         Hyperlang.Limits.finished(stored.limits_group)
-        complete_worker_reply(stored, mon, cancel_watcher, call_id, runtime, reply)
+        complete_worker_reply(stored, cancel_watcher, call_id, runtime, reply)
 
       {:down, reason} ->
         if lease, do: Hyperlang.Scope.release(lease)
@@ -672,9 +679,8 @@ defmodule Hyperlang.Worker do
 
   # The worker completes its own limits membership before it replies and folds
   # a wall or ceiling fault into `reply`, so the caller needs no Limits call.
-  defp complete_worker_reply(stored, mon, cancel_watcher, call_id, runtime, reply) do
+  defp complete_worker_reply(stored, cancel_watcher, call_id, runtime, reply) do
     stop_parent_watcher(cancel_watcher)
-    Process.demonitor(mon, [:flush])
     finish_reply = finish_filesystem_eval(stored, call_id, reply_outcome(reply))
     cleanup_call_handles(stored, call_id)
     finish_worker_reply(finish_reply, reply, runtime)

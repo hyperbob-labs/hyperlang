@@ -195,7 +195,21 @@ defmodule Hyperlang.Chan do
         send(accountant, {:registry_work, after_r - before, elem(request, 0) == :remove})
       end
 
-      result
+      # Under channel churn the registry has a constant backlog. Without a
+      # yield it serves dozens of requests in one time slice, which held a
+      # scheduler for up to about 300 us in the channel64 measurement. A woken
+      # high-priority process queued on that scheduler, such as a latency
+      # caller or Scope, waits for the slice to end. Replying first and then
+      # yielding after each request bounds that wait to one request.
+      case result do
+        {:reply, reply, state} ->
+          GenServer.reply(from, reply)
+          :erlang.yield()
+          {:noreply, state}
+
+        other ->
+          other
+      end
     end
 
     defp dispatch({:startchan, handle, owner, scope}, _from, st) do

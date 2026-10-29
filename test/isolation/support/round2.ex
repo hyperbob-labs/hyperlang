@@ -927,6 +927,8 @@ defmodule Hyperlang.Isolation.Round2Probe do
     }
   end
 
+  def paired_contention(mode, tenants), do: Hyperlang.Isolation.Contention.paired(mode, tenants)
+
   def noisy_extra(mode, tenants, profile? \\ false) when mode in [:channel, :timer] do
     victim =
       Kit.program!("result(N) -> loop(N). loop(0) -> 1; loop(N) -> loop(N-1).", %{
