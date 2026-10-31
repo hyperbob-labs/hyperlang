@@ -5,7 +5,7 @@ defmodule Hyperlang.Test do
   The kit plays the role `vitest-pool-workers` plays for Cloudflare Workers:
   it compiles a guest, supplies fake bindings, runs exports, and starts
   callback actors. It uses only the public door (`Hyperlang.program/1`,
-  `Hyperlang.run/4`, `Hyperlang.module/1`), so a test exercises exactly the
+  `Hyperlang.run/4`, `Hyperlang.Actor`), so a test exercises exactly the
   path production code takes.
 
       import Hyperlang.Test
@@ -108,7 +108,7 @@ defmodule Hyperlang.Test do
   end
 
   @doc """
-  Start the program's callback module as an unlinked `GenServer` and return
+  Start the program as an unlinked `Hyperlang.Actor` and return
   its pid. `arg` is the guest `init/1` argument. Options are `:bindings`,
   `:policy`, and `:syscall`, as for `run/4`; they become the actor's spec.
   """
@@ -121,7 +121,7 @@ defmodule Hyperlang.Test do
       }
       |> maybe_put(:syscall, Keyword.get(opts, :syscall))
 
-    case GenServer.start(Hyperlang.module(program), {spec, arg}) do
+    case GenServer.start(Hyperlang.Actor, {spec, program, arg}) do
       {:ok, pid} -> pid
       other -> raise ArgumentError, "Hyperlang actor failed to start: #{inspect(other)}"
     end

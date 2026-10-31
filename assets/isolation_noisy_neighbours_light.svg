@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
 <title id="t">Victim p99 latency slowdown next to noisy tenants</title>
-<desc id="d">Three panels (CPU load, heap pressure, compile load). With 16 noisy tenants that have no scope policy, the latency-class victim's p99 rises to 1.8x, 9.4x and 1.4x its unloaded value; with the neighbours in background scopes with quotas it stays at 1.1x, 1.1x and 1.0x.</desc>
+<desc id="d">Three panels (CPU load, heap pressure, compile load). With 16 noisy tenants that have no scope policy, the latency-class victim's p99 rises to 2.4x, 13.6x and 2.4x its unloaded value; with the neighbours in background scopes with quotas it rises to 1.7x, 2.1x and 1.9x.</desc>
 <rect width="960" height="430" fill="#fcfcfb"/>
 <text x="56" y="30" font-size="17" font-weight="600" fill="#0b0b0b">Victim p99 latency next to noisy tenants</text>
-<text x="56" y="52" font-size="13" fill="#52514e">Slowdown of one latency-class tenant versus its unloaded p99. Median of 3 runs of 1,000 requests per point, 4 schedulers, one node.</text>
+<text x="56" y="52" font-size="13" fill="#52514e">Slowdown of one latency-class tenant versus its unloaded p99. Median of 3 runs, 1,000 requests over 400 ms per point, 4 schedulers.</text>
 <line x1="56" y1="80" x2="78" y2="80" stroke="#2a78d6" stroke-width="2"/>
 <circle cx="67" cy="80" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
 <text x="86" y="84.5" font-size="13" fill="#0b0b0b">Neighbours in background scopes with quotas</text>
@@ -13,77 +13,73 @@
 <text x="56.0" y="106" font-size="13" font-weight="600" fill="#0b0b0b">CPU load</text>
 <line x1="56.0" y1="368.0" x2="322.6666666666667" y2="368.0" stroke="#c3c2b7" stroke-width="1"/>
 <text x="48.0" y="372.0" font-size="11" text-anchor="end" fill="#898781">0×</text>
-<line x1="56.0" y1="318.0" x2="322.6666666666667" y2="318.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="48.0" y="322.0" font-size="11" text-anchor="end" fill="#898781">2×</text>
-<line x1="56.0" y1="268.0" x2="322.6666666666667" y2="268.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="48.0" y="272.0" font-size="11" text-anchor="end" fill="#898781">4×</text>
-<line x1="56.0" y1="218.0" x2="322.6666666666667" y2="218.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="48.0" y="222.0" font-size="11" text-anchor="end" fill="#898781">6×</text>
-<line x1="56.0" y1="168.0" x2="322.6666666666667" y2="168.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="48.0" y="172.0" font-size="11" text-anchor="end" fill="#898781">8×</text>
+<line x1="56.0" y1="305.5" x2="322.6666666666667" y2="305.5" stroke="#e1e0d9" stroke-width="1"/>
+<text x="48.0" y="309.5" font-size="11" text-anchor="end" fill="#898781">4×</text>
+<line x1="56.0" y1="243.0" x2="322.6666666666667" y2="243.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="48.0" y="247.0" font-size="11" text-anchor="end" fill="#898781">8×</text>
+<line x1="56.0" y1="180.5" x2="322.6666666666667" y2="180.5" stroke="#e1e0d9" stroke-width="1"/>
+<text x="48.0" y="184.5" font-size="11" text-anchor="end" fill="#898781">12×</text>
 <line x1="56.0" y1="118.0" x2="322.6666666666667" y2="118.0" stroke="#e1e0d9" stroke-width="1"/>
-<text x="48.0" y="122.0" font-size="11" text-anchor="end" fill="#898781">10×</text>
+<text x="48.0" y="122.0" font-size="11" text-anchor="end" fill="#898781">16×</text>
 <text x="74.0" y="386" font-size="11" text-anchor="middle" fill="#898781">0</text>
 <text x="150.9" y="386" font-size="11" text-anchor="middle" fill="#898781">1</text>
 <text x="227.8" y="386" font-size="11" text-anchor="middle" fill="#898781">4</text>
 <text x="304.7" y="386" font-size="11" text-anchor="middle" fill="#898781">16</text>
-<path d="M74.0,343.0 L150.9,336.1 L227.8,340.8 L304.7,341.4" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="74.0" cy="343.0" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 0 noisy tenants, neighbours in background scopes with quotas: p99 80 µs (1.0×)</title></circle>
-<circle cx="150.9" cy="336.1" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 1 noisy tenants, neighbours in background scopes with quotas: p99 102 µs (1.3×)</title></circle>
-<circle cx="227.8" cy="340.8" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 4 noisy tenants, neighbours in background scopes with quotas: p99 87 µs (1.1×)</title></circle>
-<circle cx="304.7" cy="341.4" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 16 noisy tenants, neighbours in background scopes with quotas: p99 85 µs (1.1×)</title></circle>
-<text x="296.7" y="361.4" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.1×</text>
-<path d="M74.0,343.0 L150.9,343.0 L227.8,324.1 L304.7,324.1" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="74.0" cy="343.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 0 noisy tenants, neighbours with no scope policy: p99 74 µs (1.0×)</title></circle>
-<circle cx="150.9" cy="343.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 1 noisy tenants, neighbours with no scope policy: p99 74 µs (1.0×)</title></circle>
-<circle cx="227.8" cy="324.1" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 4 noisy tenants, neighbours with no scope policy: p99 130 µs (1.8×)</title></circle>
-<circle cx="304.7" cy="324.1" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 16 noisy tenants, neighbours with no scope policy: p99 130 µs (1.8×)</title></circle>
-<text x="296.7" y="314.1" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.8×</text>
+<path d="M74.0,352.4 L150.9,346.6 L227.8,341.2 L304.7,341.2" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="74.0" cy="352.4" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 0 noisy tenants, neighbours in background scopes with quotas: p99 46 µs (1.0×)</title></circle>
+<circle cx="150.9" cy="346.6" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 1 noisy tenants, neighbours in background scopes with quotas: p99 63 µs (1.4×)</title></circle>
+<circle cx="227.8" cy="341.2" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 4 noisy tenants, neighbours in background scopes with quotas: p99 79 µs (1.7×)</title></circle>
+<circle cx="304.7" cy="341.2" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 16 noisy tenants, neighbours in background scopes with quotas: p99 79 µs (1.7×)</title></circle>
+<text x="296.7" y="361.2" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.7×</text>
+<path d="M74.0,352.4 L150.9,346.8 L227.8,330.8 L304.7,331.2" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="74.0" cy="352.4" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 0 noisy tenants, neighbours with no scope policy: p99 45 µs (1.0×)</title></circle>
+<circle cx="150.9" cy="346.8" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 1 noisy tenants, neighbours with no scope policy: p99 61 µs (1.4×)</title></circle>
+<circle cx="227.8" cy="330.8" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 4 noisy tenants, neighbours with no scope policy: p99 107 µs (2.4×)</title></circle>
+<circle cx="304.7" cy="331.2" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>CPU load, 16 noisy tenants, neighbours with no scope policy: p99 106 µs (2.4×)</title></circle>
+<text x="296.7" y="321.2" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">2.4×</text>
 <text x="362.6666666666667" y="106" font-size="13" font-weight="600" fill="#0b0b0b">Heap pressure</text>
 <line x1="362.6666666666667" y1="368.0" x2="629.3333333333334" y2="368.0" stroke="#c3c2b7" stroke-width="1"/>
-<line x1="362.6666666666667" y1="318.0" x2="629.3333333333334" y2="318.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="362.6666666666667" y1="268.0" x2="629.3333333333334" y2="268.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="362.6666666666667" y1="218.0" x2="629.3333333333334" y2="218.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="362.6666666666667" y1="168.0" x2="629.3333333333334" y2="168.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="362.6666666666667" y1="305.5" x2="629.3333333333334" y2="305.5" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="362.6666666666667" y1="243.0" x2="629.3333333333334" y2="243.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="362.6666666666667" y1="180.5" x2="629.3333333333334" y2="180.5" stroke="#e1e0d9" stroke-width="1"/>
 <line x1="362.6666666666667" y1="118.0" x2="629.3333333333334" y2="118.0" stroke="#e1e0d9" stroke-width="1"/>
 <text x="380.7" y="386" font-size="11" text-anchor="middle" fill="#898781">0</text>
 <text x="457.6" y="386" font-size="11" text-anchor="middle" fill="#898781">1</text>
 <text x="534.4" y="386" font-size="11" text-anchor="middle" fill="#898781">4</text>
 <text x="611.3" y="386" font-size="11" text-anchor="middle" fill="#898781">16</text>
-<path d="M380.7,343.0 L457.6,345.0 L534.4,343.0 L611.3,340.7" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="380.7" cy="343.0" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 0 noisy tenants, neighbours in background scopes with quotas: p99 86 µs (1.0×)</title></circle>
-<circle cx="457.6" cy="345.0" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 1 noisy tenants, neighbours in background scopes with quotas: p99 79 µs (0.9×)</title></circle>
-<circle cx="534.4" cy="343.0" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 4 noisy tenants, neighbours in background scopes with quotas: p99 86 µs (1.0×)</title></circle>
-<circle cx="611.3" cy="340.7" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 16 noisy tenants, neighbours in background scopes with quotas: p99 94 µs (1.1×)</title></circle>
-<text x="603.3" y="360.7" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.1×</text>
-<path d="M380.7,343.0 L457.6,343.0 L534.4,260.9 L611.3,134.0" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="380.7" cy="343.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 0 noisy tenants, neighbours with no scope policy: p99 78 µs (1.0×)</title></circle>
-<circle cx="457.6" cy="343.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 1 noisy tenants, neighbours with no scope policy: p99 78 µs (1.0×)</title></circle>
-<circle cx="534.4" cy="260.9" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 4 noisy tenants, neighbours with no scope policy: p99 334 µs (4.3×)</title></circle>
-<circle cx="611.3" cy="134.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 16 noisy tenants, neighbours with no scope policy: p99 730 µs (9.4×)</title></circle>
-<text x="603.3" y="124.0" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">9.4×</text>
+<path d="M380.7,352.4 L457.6,349.6 L534.4,345.7 L611.3,334.8" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="380.7" cy="352.4" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 0 noisy tenants, neighbours in background scopes with quotas: p99 56 µs (1.0×)</title></circle>
+<circle cx="457.6" cy="349.6" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 1 noisy tenants, neighbours in background scopes with quotas: p99 66 µs (1.2×)</title></circle>
+<circle cx="534.4" cy="345.7" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 4 noisy tenants, neighbours in background scopes with quotas: p99 80 µs (1.4×)</title></circle>
+<circle cx="611.3" cy="334.8" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 16 noisy tenants, neighbours in background scopes with quotas: p99 119 µs (2.1×)</title></circle>
+<text x="603.3" y="354.8" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">2.1×</text>
+<path d="M380.7,352.4 L457.6,350.2 L534.4,266.8 L611.3,155.5" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="380.7" cy="352.4" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 0 noisy tenants, neighbours with no scope policy: p99 50 µs (1.0×)</title></circle>
+<circle cx="457.6" cy="350.2" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 1 noisy tenants, neighbours with no scope policy: p99 57 µs (1.1×)</title></circle>
+<circle cx="534.4" cy="266.8" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 4 noisy tenants, neighbours with no scope policy: p99 324 µs (6.5×)</title></circle>
+<circle cx="611.3" cy="155.5" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Heap pressure, 16 noisy tenants, neighbours with no scope policy: p99 680 µs (13.6×)</title></circle>
+<text x="603.3" y="145.5" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">13.6×</text>
 <text x="669.3333333333334" y="106" font-size="13" font-weight="600" fill="#0b0b0b">Compile load</text>
 <line x1="669.3333333333334" y1="368.0" x2="936.0" y2="368.0" stroke="#c3c2b7" stroke-width="1"/>
-<line x1="669.3333333333334" y1="318.0" x2="936.0" y2="318.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="669.3333333333334" y1="268.0" x2="936.0" y2="268.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="669.3333333333334" y1="218.0" x2="936.0" y2="218.0" stroke="#e1e0d9" stroke-width="1"/>
-<line x1="669.3333333333334" y1="168.0" x2="936.0" y2="168.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="669.3333333333334" y1="305.5" x2="936.0" y2="305.5" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="669.3333333333334" y1="243.0" x2="936.0" y2="243.0" stroke="#e1e0d9" stroke-width="1"/>
+<line x1="669.3333333333334" y1="180.5" x2="936.0" y2="180.5" stroke="#e1e0d9" stroke-width="1"/>
 <line x1="669.3333333333334" y1="118.0" x2="936.0" y2="118.0" stroke="#e1e0d9" stroke-width="1"/>
 <text x="687.3" y="386" font-size="11" text-anchor="middle" fill="#898781">0</text>
 <text x="764.2" y="386" font-size="11" text-anchor="middle" fill="#898781">1</text>
 <text x="841.1" y="386" font-size="11" text-anchor="middle" fill="#898781">4</text>
 <text x="918.0" y="386" font-size="11" text-anchor="middle" fill="#898781">16</text>
-<path d="M687.3,343.0 L764.2,343.5 L841.1,343.3 L918.0,342.5" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="687.3" cy="343.0" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 0 noisy tenants, neighbours in background scopes with quotas: p99 95 µs (1.0×)</title></circle>
-<circle cx="764.2" cy="343.5" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 1 noisy tenants, neighbours in background scopes with quotas: p99 93 µs (1.0×)</title></circle>
-<circle cx="841.1" cy="343.3" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 4 noisy tenants, neighbours in background scopes with quotas: p99 94 µs (1.0×)</title></circle>
-<circle cx="918.0" cy="342.5" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 16 noisy tenants, neighbours in background scopes with quotas: p99 97 µs (1.0×)</title></circle>
-<text x="910.0" y="362.5" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.0×</text>
-<path d="M687.3,343.0 L764.2,343.6 L841.1,335.4 L918.0,333.0" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
-<circle cx="687.3" cy="343.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 0 noisy tenants, neighbours with no scope policy: p99 85 µs (1.0×)</title></circle>
-<circle cx="764.2" cy="343.6" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 1 noisy tenants, neighbours with no scope policy: p99 83 µs (1.0×)</title></circle>
-<circle cx="841.1" cy="335.4" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 4 noisy tenants, neighbours with no scope policy: p99 111 µs (1.3×)</title></circle>
-<circle cx="918.0" cy="333.0" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 16 noisy tenants, neighbours with no scope policy: p99 119 µs (1.4×)</title></circle>
-<text x="910.0" y="323.0" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.4×</text>
+<path d="M687.3,352.4 L764.2,344.7 L841.1,341.4 L918.0,338.4" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="687.3" cy="352.4" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 0 noisy tenants, neighbours in background scopes with quotas: p99 47 µs (1.0×)</title></circle>
+<circle cx="764.2" cy="344.7" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 1 noisy tenants, neighbours in background scopes with quotas: p99 70 µs (1.5×)</title></circle>
+<circle cx="841.1" cy="341.4" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 4 noisy tenants, neighbours in background scopes with quotas: p99 80 µs (1.7×)</title></circle>
+<circle cx="918.0" cy="338.4" r="4" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 16 noisy tenants, neighbours in background scopes with quotas: p99 89 µs (1.9×)</title></circle>
+<text x="910.0" y="358.4" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">1.9×</text>
+<path d="M687.3,352.4 L764.2,344.7 L841.1,330.8 L918.0,331.1" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="687.3" cy="352.4" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 0 noisy tenants, neighbours with no scope policy: p99 47 µs (1.0×)</title></circle>
+<circle cx="764.2" cy="344.7" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 1 noisy tenants, neighbours with no scope policy: p99 70 µs (1.5×)</title></circle>
+<circle cx="841.1" cy="330.8" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 4 noisy tenants, neighbours with no scope policy: p99 112 µs (2.4×)</title></circle>
+<circle cx="918.0" cy="331.1" r="4" fill="#eb6834" stroke="#fcfcfb" stroke-width="2"><title>Compile load, 16 noisy tenants, neighbours with no scope policy: p99 111 µs (2.4×)</title></circle>
+<text x="910.0" y="321.1" font-size="12" font-weight="600" text-anchor="end" fill="#0b0b0b">2.4×</text>
 <text x="496" y="412" font-size="12" text-anchor="middle" fill="#52514e">Noisy tenants running alongside the victim</text>
 </svg>

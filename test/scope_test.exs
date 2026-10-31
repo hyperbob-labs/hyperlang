@@ -473,7 +473,7 @@ defmodule Hyperlang.ScopeTest do
       Kit.program!("result(_) -> host:wait().", %{bindings: bindings, terms: %{public: :erlang}})
 
     # Preload before closing to isolate the active runtime from cold compilation.
-    Hyperlang.module(p)
+    :ok = Hyperlang.load(p)
 
     host =
       spawn(fn ->
@@ -500,7 +500,7 @@ defmodule Hyperlang.ScopeTest do
     scope: scope
   } do
     p = Kit.program!("result(_) -> 1.", %{terms: %{public: :erlang}})
-    Hyperlang.module(p)
+    :ok = Hyperlang.load(p)
     :ok = Scope.configure(scope, %{heap_words: 1})
 
     assert {:error, %{category: :busy, details: %{"reason" => "scope_terminated"}}} =
@@ -553,7 +553,7 @@ defmodule Hyperlang.ScopeTest do
 
   test "nested workers share aggregate CPU limits and die with the ancestor", %{scope: scope} do
     inner = Kit.program!("result(_) -> spin(). spin() -> spin().", %{terms: %{public: :erlang}})
-    Hyperlang.module(inner)
+    :ok = Hyperlang.load(inner)
 
     bindings = %{
       "host" => %{
@@ -569,7 +569,7 @@ defmodule Hyperlang.ScopeTest do
     outer =
       Kit.program!("result(_) -> host:nest().", %{bindings: bindings, terms: %{public: :erlang}})
 
-    Hyperlang.module(outer)
+    :ok = Hyperlang.load(outer)
 
     :ok =
       Scope.configure(scope, %{
@@ -591,7 +591,7 @@ defmodule Hyperlang.ScopeTest do
 
   test "an outer wall deadline terminates its nested worker", %{scope: scope} do
     inner = Kit.program!("result(_) -> spin(). spin() -> spin().", %{terms: %{public: :erlang}})
-    Hyperlang.module(inner)
+    :ok = Hyperlang.load(inner)
 
     bindings = %{
       "host" => %{
@@ -607,7 +607,7 @@ defmodule Hyperlang.ScopeTest do
     outer =
       Kit.program!("result(_) -> host:nest().", %{bindings: bindings, terms: %{public: :erlang}})
 
-    Hyperlang.module(outer)
+    :ok = Hyperlang.load(outer)
     :ok = Scope.configure(scope, %{max_concurrent_runs: 1})
 
     assert {:error, %{category: :timeout}} =
@@ -923,7 +923,7 @@ defmodule Hyperlang.ScopeTest do
           terms: %{public: :erlang}
         })
 
-      Hyperlang.module(p)
+      :ok = Hyperlang.load(p)
       groups = limits_groups()
 
       results =
@@ -949,7 +949,7 @@ defmodule Hyperlang.ScopeTest do
     scope: scope
   } do
     p = Kit.program!("result(_) -> spin(). spin() -> spin().", %{terms: %{public: :erlang}})
-    Hyperlang.module(p)
+    :ok = Hyperlang.load(p)
     :ok = Scope.configure(scope, %{priority: :latency, max_concurrent_runs: 1})
     groups = limits_groups()
 
@@ -970,7 +970,7 @@ defmodule Hyperlang.ScopeTest do
     scope: scope
   } do
     inner = Kit.program!("result(N) -> N + 1.", %{terms: %{public: :erlang}})
-    Hyperlang.module(inner)
+    :ok = Hyperlang.load(inner)
 
     bindings = %{
       "host" => %{

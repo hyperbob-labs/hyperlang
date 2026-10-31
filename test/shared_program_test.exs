@@ -47,7 +47,7 @@ defmodule SharedProgramTest do
   end
 
   defp start_actor(program, start, policy \\ %{}) do
-    {:ok, pid} = GenServer.start(Hyperlang.module(program), {%{policy: policy}, start})
+    {:ok, pid} = GenServer.start(Hyperlang.Actor, {%{policy: policy}, program, start})
     pid
   end
 
@@ -143,7 +143,7 @@ defmodule SharedProgramTest do
 
     test "the record lives exactly as long as the code slot" do
       program = counter_program(1)
-      _module = Hyperlang.module(program)
+      :ok = Hyperlang.load(program)
       hash = program.content_hash
 
       assert [{^hash, %{program: shared}}] =
@@ -162,18 +162,19 @@ defmodule SharedProgramTest do
       window = 3
       manifest = Map.put(@actor_manifest, :code_pool, %{size: window})
       program = counter_program(2, manifest)
-      module = Hyperlang.module(program)
       pid = start_actor(program, 10)
+      {:ok, %{module: module}} = Hyperlang.CodeServer.load(program)
       assert GenServer.call(pid, "inc") == 11
       :erlang.garbage_collect(pid)
       {:memory, shared_bytes} = Process.info(pid, :memory)
 
       # Oversubscribe the window: the other slots are reclaimed and reused,
       # the actor's pinned slot and its record stay.
-      for salt <- 100..(100 + window * 2), do: Hyperlang.module(counter_program(salt, manifest))
+      for salt <- 100..(100 + window * 2),
+          do: :ok = Hyperlang.load(counter_program(salt, manifest))
 
       assert Enum.any?(loaded_records(), fn {h, _} -> h == program.content_hash end)
-      assert Hyperlang.module(program) == module
+      assert {:ok, %{module: ^module}} = Hyperlang.CodeServer.load(program)
       assert :code.is_loaded(module) != false
 
       :erlang.garbage_collect(pid)

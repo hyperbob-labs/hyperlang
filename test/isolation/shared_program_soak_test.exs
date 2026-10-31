@@ -86,7 +86,7 @@ defmodule Hyperlang.Isolation.SharedProgramSoakTest do
 
   test "10,000 distinct programs leave only a window of shared records" do
     warm = program(0)
-    {:ok, pid} = GenServer.start(Hyperlang.module(warm), {%{}, 0})
+    {:ok, pid} = GenServer.start(Hyperlang.Actor, {%{}, warm, 0})
     GenServer.stop(pid)
     baseline = stable_footprint()
     before = records()
@@ -94,7 +94,7 @@ defmodule Hyperlang.Isolation.SharedProgramSoakTest do
     hashes =
       for salt <- 1..@programs do
         program = program(salt)
-        {:ok, pid} = GenServer.start(Hyperlang.module(program), {%{}, salt})
+        {:ok, pid} = GenServer.start(Hyperlang.Actor, {%{}, program, salt})
         assert GenServer.call(pid, "inc") == salt + 1
         GenServer.stop(pid)
         program.content_hash
@@ -115,8 +115,8 @@ defmodule Hyperlang.Isolation.SharedProgramSoakTest do
 
   test "an actor's pin survives a CodeServer restart" do
     program = program(-1)
-    module = Hyperlang.module(program)
-    {:ok, pid} = GenServer.start(module, {%{}, 41})
+    {:ok, pid} = GenServer.start(Hyperlang.Actor, {%{}, program, 41})
+    {:ok, %{module: module}} = Hyperlang.CodeServer.load(program)
     assert GenServer.call(pid, "inc") == 42
 
     old = Process.whereis(Hyperlang.CodeServer)
@@ -134,11 +134,11 @@ defmodule Hyperlang.Isolation.SharedProgramSoakTest do
     # Churn the whole window: the restored pin keeps the actor's slot.
     for salt <- 1..(@window * 3) do
       p = program(-100 - salt)
-      {:ok, other} = GenServer.start(Hyperlang.module(p), {%{}, salt})
+      {:ok, other} = GenServer.start(Hyperlang.Actor, {%{}, p, salt})
       GenServer.stop(other)
     end
 
-    assert Hyperlang.module(program) == module
+    assert {:ok, %{module: ^module}} = Hyperlang.CodeServer.load(program)
     assert GenServer.call(pid, "inc") == 43
     GenServer.stop(pid)
 

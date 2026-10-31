@@ -3,7 +3,7 @@ defmodule Hyperlang.Program do
   An immutable, content-addressed guest program.
 
   `Hyperlang.program/1,2` returns this struct. Treat it as an opaque value:
-  pass it to `Hyperlang.run/4` or `Hyperlang.module/1`, and compare or cache
+  pass it to `Hyperlang.run/4` or a `Hyperlang.Actor`, and compare or cache
   it by `content_hash`. The same source and manifest always produce an equal
   program. `metadata` holds public program metadata (declared exports, the
   normalized manifest summary and the source snapshot listing); it never

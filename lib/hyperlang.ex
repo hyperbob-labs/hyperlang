@@ -2,7 +2,7 @@ defmodule Hyperlang do
   @moduledoc """
   Compile and run untrusted Erlang-shaped guest programs.
 
-  The whole public API is four functions:
+  The public API is four functions and one callback module:
 
     * `program/1` compiles an immutable source value into a
       `Hyperlang.Program`. The manifest, the binding MFA set, the export set
@@ -11,7 +11,10 @@ defmodule Hyperlang do
       the loader only on a miss.
     * `run/4` runs one declared export with exactly the authority in its
       spec.
-    * `module/1` returns the program's confined OTP callback module. Every
+    * `load/1` loads a program into the code pool ahead of its first use.
+    * `Hyperlang.Actor` is the `GenServer` callback module that runs a
+      program's OTP callbacks
+      (`GenServer.start(Hyperlang.Actor, {spec, program, arg})`). Every
       callback goes through `run/4`.
 
   Errors are sanitized maps whose `:category` comes from a closed taxonomy;
@@ -107,29 +110,23 @@ defmodule Hyperlang do
     do: {:error, [Hyperlang.Error.new(:api, "program loader must be an arity-zero function")]}
 
   @doc """
-  Return the loaded confined module for an immutable program value.
+  Load an immutable program value into the code pool ahead of its first use.
 
-  The module is a `GenServer` callback module. Start it with
-  `GenServer.start(Hyperlang.module(program), {spec, arg})`; `init/1`
-  receives `arg`, and every callback runs under `spec`. Raises
-  `ArgumentError` when the program cannot be loaded.
+  Loading is optional: `run/4` and a `Hyperlang.Actor` load a program that
+  is not loaded. A host calls `load/1` to pay the compile and load cost
+  at a time of its choosing (for example at boot, outside a request). The
+  loaded code is not pinned; the pool may reclaim it later, and the next use
+  loads it again.
 
-  From `init/1` until it exits, an actor pins the program's code slot, so
-  the module stays loaded under it even after `release` or code-pool
-  pressure. The pin is charged to the actor's scope (`spec.policy.scope`,
-  else the actor's own default scope), which may pin at most `max_code_pins`
-  distinct slots. `init/1` stops with a `code_pool` error when that limit is
-  reached (`pin_limit`) or when the slot was reclaimed before the actor
-  started (`not_loaded`); call `module/1` again and restart.
+  Returns `:ok`, or `{:error, error}` with a sanitized error map (for
+  example `category: :code_pool` when every slot of the program's window is
+  pinned or still running).
   """
-  @spec module(Program.t()) :: module()
-  def module(%Program{} = program) do
+  @spec load(Program.t()) :: :ok | {:error, term()}
+  def load(program) do
     case load_program(program) do
-      {:ok, slot} ->
-        slot.module
-
-      {:error, error} ->
-        raise ArgumentError, "program load failed: #{inspect(error)}"
+      {:ok, _slot} -> :ok
+      {:error, error} -> {:error, Hyperlang.Terms.sanitize_error(error)}
     end
   end
 

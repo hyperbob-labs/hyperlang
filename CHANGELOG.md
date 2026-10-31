@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.2.0
+
+### Public API
+
+- **Breaking:** `Hyperlang.module(program)` is removed. It returned a code-slot
+  module name that was not pinned until an actor's `init/1` ran. A release
+  or reclamation in between made the start fail with `undef`, or made the
+  actor run another program that had reused the slot.
+- `Hyperlang.Actor` is the public `GenServer` callback module for program
+  actors. Its init argument is `{spec, program, arg}`, and `child_spec/1`
+  takes the same tuple (id `Hyperlang.Actor`, restart `:permanent`; give
+  each of several actors under one supervisor its own id with
+  `Supervisor.child_spec/2`). The actor's `init/1` loads the program and
+  pins its slot in one step, so the actor always runs exactly that program.
+  Bad init arguments stop it with `{:hyperlang, %{category: :api}}`.
+- Migration:
+  `GenServer.start(Hyperlang.module(program), {spec, arg})` becomes
+  `GenServer.start(Hyperlang.Actor, {spec, program, arg})`, and
+  `GenServer.start_link` likewise.
+- `Hyperlang.load/1` loads a program ahead of its first use and returns
+  `:ok` or `{:error, sanitized_error}`. Migration: a preloading
+  `Hyperlang.module(program)` call becomes `:ok = Hyperlang.load(program)`.
+
+### Behaviour
+
+- Generated modules no longer export OTP callbacks; `GenServer.start/2` on
+  one fails with `undef`. An actor's process module is `Hyperlang.Actor`.
+- An actor calls `handle_info/2` and `terminate/2` only when the program
+  exports them. A message to a program without `handle_info/2` is dropped
+  without a log entry. A missing `handle_cast/2`, `handle_call/3` or
+  `handle_continue/2` stops the actor with the typed `run/4` error
+  (`category: :export`) instead of `undef`.
+- An actor's `init/1` no longer stops with `code_pool` `not_loaded`. It stops with
+  `code_pool` when the program's window has no free slot, or with
+  `pin_limit` at the scope bound (checked before any load).
+- The compile for a load done by `init/1` is charged to the actor's scope.
+
+### Isolation verification
+
+- Heap pressure has a tested bound: with 16 heap-pressure tenants in
+  `:background` scopes with a churn quota, the latency-class victim's p99
+  stays within 3x its unloaded p99. The R2-4 paired measurement now spreads
+  loaded blocks over a whole quota refill period, so rate-limited bursts are
+  measured.
+- Corrected noisy-neighbour figures. The sequential matrix and the comparison
+  bench sampled the victim only before the first quota refill, so they never
+  saw the noisy tenants' refill bursts. Requests are now spread evenly over
+  four refill periods. With 16 tenants in background scopes the victim's p99
+  slowdown is 1.7x (CPU), 2.1x (heap) and 1.9x (compile), and the comparison
+  figure is 1.65x; 0.1.0 published 1.1x, 1.1x, 1.0x and 1.37x.
+
+### Package
+
+- The Hex package links to this changelog.
+
 ## 0.1.0
 
 First public release.
@@ -16,7 +71,8 @@ The door:
   Success is `{:ok, value, %{stdout: [binary], reductions: integer,
   wall_us: integer}}`; failure is `{:error, sanitized_error}` with a category
   from the closed fault taxonomy.
-- `Hyperlang.module/1`: return the confined OTP callback module of a program.
+- `Hyperlang.module(program)`: return the confined OTP callback module of a
+  program.
 
 Host contracts and tools:
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
 <title id="t">The fastest, smallest, fairest sandbox on the BEAM</title>
-<desc id="d">Compute: Hyperlang 0.35 ms, wasmex 0.68 ms, Luerl 84.7 ms, Dune 275 ms, erl_eval + handler 106 ms, Peer node 0.33 ms, OS process 0.38 ms; Start a tenant: Hyperlang 0.05 ms, wasmex 0.08 ms, Luerl 0.03 ms, Dune 0.41 ms, erl_eval + handler 0.01 ms, Peer node 112 ms, OS process 123 ms, Docker 178 ms; Memory per tenant: Hyperlang 23 KiB, wasmex 89 KiB, Luerl 71 KiB, Dune 109 KiB, erl_eval + handler 23 KiB, Peer node 74 MiB, OS process 76 MiB; Noisy neighbours: Hyperlang 1.37×, wasmex 4.5×, Luerl 3.04×, Dune 35.7×, erl_eval + handler 7.4×, Peer node 1.14×</desc>
+<desc id="d">Compute: Hyperlang 0.35 ms, wasmex 0.68 ms, Luerl 84.7 ms, Dune 275 ms, erl_eval + handler 106 ms, Peer node 0.33 ms, OS process 0.38 ms; Start a tenant: Hyperlang 0.05 ms, wasmex 0.08 ms, Luerl 0.03 ms, Dune 0.41 ms, erl_eval + handler 0.01 ms, Peer node 112 ms, OS process 123 ms, Docker 178 ms; Memory per tenant: Hyperlang 23 KiB, wasmex 89 KiB, Luerl 71 KiB, Dune 109 KiB, erl_eval + handler 23 KiB, Peer node 74 MiB, OS process 76 MiB; Noisy neighbours: Hyperlang 1.65×, wasmex 4.5×, Luerl 3.04×, Dune 35.7×, erl_eval + handler 7.4×, Peer node 1.14×</desc>
 <rect width="1600" height="900" fill="#1a1a19"/>
 <text x="48" y="76" font-size="40" font-weight="650" fill="#f0efec">The fastest, smallest, fairest sandbox on the BEAM</text>
 <text x="48" y="116" font-size="21" fill="#c3c2b7">Lower is better (log scale). Ranked against the other BEAM sandboxes; unsandboxed options shown for reference. Method: doc/COMPARISON.md</text>
@@ -120,10 +120,10 @@
 <text x="1387.5" y="842" font-size="15" fill="#898781" text-anchor="middle">10×</text>
 <text x="1468.0" y="842" font-size="15" fill="#898781" text-anchor="middle">100×</text>
 <line x1="1307.0" y1="250" x2="1307.0" y2="814" stroke="#383835" stroke-width="1.5"/>
-<path d="M1307.0,275.0 h7.0 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-7.0 z" fill="#3987e5" opacity="1"/>
-<text x="1328.0" y="289.0" font-size="19" font-weight="700" fill="#f0efec">1.37×</text>
-<rect x="1390.0" y="270.0" width="52" height="24" rx="12" fill="#3987e5"/>
-<text x="1398.0" y="287.0" font-size="15" font-weight="700" fill="#ffffff">best</text>
+<path d="M1307.0,275.0 h13.5 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-13.5 z" fill="#3987e5" opacity="1"/>
+<text x="1334.5" y="289.0" font-size="19" font-weight="700" fill="#f0efec">1.65×</text>
+<rect x="1396.5" y="270.0" width="52" height="24" rx="12" fill="#3987e5"/>
+<text x="1404.5" y="287.0" font-size="15" font-weight="700" fill="#ffffff">best</text>
 <path d="M1307.0,339.0 h48.6 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-48.6 z" fill="#5c5b57" opacity="1"/>
 <text x="1369.6" y="353.0" font-size="19" font-weight="500" fill="#f0efec">4.5× at 4 tenants</text>
 <path d="M1307.0,403.0 h34.9 a4,4 0 0 1 4,4 v6 a4,4 0 0 1 -4,4 h-34.9 z" fill="#5c5b57" opacity="1"/>

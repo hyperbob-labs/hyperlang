@@ -11,17 +11,6 @@ defmodule Hyperlang.Codegen do
   @export :"$safe_export"
   @raw_export :"$safe_raw_export"
   @pending_version :hyperlang_pending_version
-  @pending_module :hyperlang_pending_module
-  @otp_callbacks [
-    init: 1,
-    handle_call: 3,
-    handle_cast: 2,
-    handle_info: 2,
-    handle_continue: 2,
-    terminate: 2,
-    code_change: 3,
-    format_status: 1
-  ]
   @constant_tuple_tag :"$hyperlang_constant_tuple"
   @snapshot_apply :safe_snapshot_apply
   @lc_append :safe_lc_append
@@ -126,13 +115,9 @@ defmodule Hyperlang.Codegen do
     previous = Process.put(@lift_key, new_lift_state(core))
 
     try do
-      callback_exports = callback_exports(core, manifest)
-
       base = [
         FormTools.module_attribute(module),
-        FormTools.export_attribute(
-          [{@entry, 3}, {@export, 4}, {@raw_export, 3}] ++ callback_exports
-        ),
+        FormTools.export_attribute([{@entry, 3}, {@export, 4}, {@raw_export, 3}]),
         entry_function(core),
         export_function(core, manifest),
         raw_export_function(core, manifest)
@@ -142,9 +127,7 @@ defmodule Hyperlang.Codegen do
       state = Process.get(@lift_key)
 
       forms =
-        (base ++
-           callback_wrapper_functions(callback_exports) ++
-           helpers ++ Enum.reverse(state.functions) ++ lc_append_function(state))
+        (base ++ helpers ++ Enum.reverse(state.functions) ++ lc_append_function(state))
         |> Enum.map(&close_function_clauses/1)
 
       {forms, state.meta}
@@ -155,48 +138,13 @@ defmodule Hyperlang.Codegen do
     end
   end
 
-  defp callback_exports(core, manifest) do
-    exported =
-      manifest.exports.functions
-      |> Map.values()
-      |> MapSet.new(fn export -> {export.function, export.arity} end)
-
-    callbacks =
-      Enum.flat_map(@otp_callbacks, fn {function, arity} ->
-        if MapSet.member?(exported, {Atom.to_string(function), arity}) and
-             Map.has_key?(core.functions, {Atom.to_string(function), arity}) do
-          [{function, arity}]
-        else
-          []
-        end
-      end)
-
-    # The OTP status adapter is mandatory, even without a guest formatter.
-    if callbacks == [], do: [], else: Enum.uniq(callbacks ++ [format_status: 1])
-  end
-
-  defp callback_wrapper_functions(callbacks) do
-    Enum.map(callbacks, fn {function, arity} ->
-      args = Enum.map(1..arity//1, &var(:"CallbackArg#{&1}"))
-
-      body =
-        remote_call(Hyperlang.Callback, :dispatch, [
-          atom(@pending_module),
-          atom(function),
-          list(args)
-        ])
-
-      {:function, 0, function, arity, [{:clause, 0, args, [], [body]}]}
-    end)
-  end
-
   def replace_module(forms, module),
     do: replace_module_and_version(forms, module, @pending_version)
 
   def replace_module_and_version(forms, module, version) do
     Enum.map(forms, fn
       {:attribute, anno, :module, _} -> {:attribute, anno, :module, module}
-      form -> replace_pending_version(form, {version, module})
+      form -> replace_pending_version(form, version)
     end)
   end
 
@@ -3513,10 +3461,7 @@ defmodule Hyperlang.Codegen do
   end
 
   defp valid_generated_exports?(exports) when is_list(exports) do
-    required = MapSet.new([{@entry, 3}, {@export, 4}, {@raw_export, 3}])
-    allowed = MapSet.union(required, MapSet.new(@otp_callbacks))
-    actual = MapSet.new(exports)
-    MapSet.subset?(required, actual) and MapSet.subset?(actual, allowed)
+    MapSet.new(exports) == MapSet.new([{@entry, 3}, {@export, 4}, {@raw_export, 3}])
   end
 
   defp valid_generated_exports?(_exports), do: false
@@ -3693,13 +3638,9 @@ defmodule Hyperlang.Codegen do
   defp generated_call_allowed?({module, function, arity}),
     do: Hyperlang.Stdlib.generated_call_allowed?(module, function, arity)
 
-  defp replace_pending_version({:atom, anno, @pending_version}, {version, _module})
+  defp replace_pending_version({:atom, anno, @pending_version}, version)
        when is_integer(version),
        do: {:integer, anno, version}
-
-  defp replace_pending_version({:atom, anno, @pending_module}, {_version, module})
-       when is_atom(module),
-       do: {:atom, anno, module}
 
   defp replace_pending_version(tuple, version) when is_tuple(tuple) do
     tuple

@@ -686,7 +686,6 @@ defmodule Hyperlang.Stdlib do
       ]
 
   def generated_call_allowed?(Hyperlang.Table, :dispatch, 3), do: true
-  def generated_call_allowed?(Hyperlang.Callback, :dispatch, 3), do: true
 
   def generated_call_allowed?(Hyperlang.Runtime, function, arity),
     do:

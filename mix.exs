@@ -1,7 +1,7 @@
 defmodule Hyperlang.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/hyperbob-labs/hyperlang"
 
   def project do
@@ -42,7 +42,10 @@ defmodule Hyperlang.MixProject do
   defp package do
     [
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url},
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "https://hexdocs.pm/hyperlang/changelog.html"
+      },
       files: ~w(lib src priv patches doc/SECURITY_SPECIFICATION.md doc/COMPARISON.md mix.exs
                 .formatter.exs README.md LICENSE NOTICE CHANGELOG.md SECURITY.md CONTRIBUTING.md)
     ]
@@ -68,7 +71,13 @@ defmodule Hyperlang.MixProject do
         "NOTICE"
       ],
       groups_for_modules: [
-        "Host API": [Hyperlang, Hyperlang.Program, Hyperlang.Binding, Hyperlang.Scope],
+        "Host API": [
+          Hyperlang,
+          Hyperlang.Program,
+          Hyperlang.Actor,
+          Hyperlang.Binding,
+          Hyperlang.Scope
+        ],
         "Syscall hosts": [Hyperlang.SyscallHost, Hyperlang.Limits, Hyperlang.Chan],
         Tooling: [Hyperlang.Test, Hyperlang.Check, Hyperlang.Manpage]
       ]

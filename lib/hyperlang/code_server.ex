@@ -36,13 +36,15 @@ defmodule Hyperlang.CodeServer do
   # every actor of the program references it without copying it onto its
   # heap. Its lifetime is the slot's: reclamation erases the record.
   #
-  # A live OTP actor pins the slot its callback module names (`pin/2`). A
-  # pinned slot is never reclaimed or released, so an actor's callback module
-  # and its program literal stay loaded for the actor's whole life, and the
-  # literal is never copied onto its heap. A `release/1` of a pinned slot
-  # takes effect when the last pin goes. Pins are charged to the actor's
-  # scope: one scope pins at most `max_code_pins` distinct slots (a
-  # `Hyperlang.Scope` policy key). The pins of a process go when it exits.
+  # A live OTP actor (`Hyperlang.Actor`) loads and pins its program's slot
+  # in one server call (`pin/2`), so the pinned slot holds exactly the
+  # program the actor was started with. A pinned slot is never reclaimed or
+  # released, so the actor's generated module and its program literal stay
+  # loaded for the actor's whole life, and the literal is never copied onto
+  # its heap. A `release/1` of a pinned slot takes effect when the last pin
+  # goes. Pins are charged to the actor's scope: one scope pins at most
+  # `max_code_pins` distinct slots (a `Hyperlang.Scope` policy key). The pins
+  # of a process go when it exits.
   defmodule Slot do
     @moduledoc false
     defstruct [:id, :module, :version, :program]
@@ -92,12 +94,13 @@ defmodule Hyperlang.CodeServer do
     GenServer.call(__MODULE__, {:release, content_hash}, :infinity)
   end
 
-  # Pin the slot behind a generated callback module for the calling process,
-  # charged to `scope`, and return the slot's program literal. The pin holds
+  # Load `program` if needed and pin its slot for the calling process,
+  # charged to `scope`; return the slot's program literal. The pin holds
   # until the process exits.
-  def pin(module, scope) when is_atom(module) do
+  def pin(%Hyperlang.Program{content_hash: content_hash} = program, scope)
+      when is_binary(content_hash) do
     ensure_started()
-    GenServer.call(__MODULE__, {:pin, module, self(), scope}, :infinity)
+    GenServer.call(__MODULE__, {:pin, program, self(), scope}, :infinity)
   end
 
   # Owned by the application, so pins survive a restart of this server.
@@ -158,7 +161,6 @@ defmodule Hyperlang.CodeServer do
       slots: slots,
       artifacts: artifacts,
       clock: clock,
-      modules: Map.new(slots, fn {id, slot} -> {slot.module, id} end),
       pins: %{},
       scope_pins: %{}
     }
@@ -168,78 +170,8 @@ defmodule Hyperlang.CodeServer do
 
   @impl true
   def handle_call({:load, program, scope}, _from, state) do
-    %Hyperlang.Program{content_hash: content_hash, artifact: %{forms: forms, manifest: manifest}} =
-      program
-
-    case loaded_artifact(state, content_hash) do
-      {:ok, slot} ->
-        {:reply, {:ok, slot}, state}
-
-      :miss ->
-        case take_slot(state, manifest.code_pool.size) do
-          {:none, state} ->
-            {:reply,
-             {:error, Hyperlang.Error.new(:code_pool, "no generated code slots available")},
-             state}
-
-          {id, slot_state, state} ->
-            # The slot version NEVER resets, not even across reclamation: a
-            # stale runtime that still names this module carries the version it
-            # was bound to, and `Runtime.new_context/3` refuses a mismatch. That
-            # monotonic version is what makes slot reuse fail closed
-            # (`:invalid_token`) instead of running one guest's call against
-            # another guest's code.
-            version = slot_state.version + 1
-            module = slot_state.module
-            loaded_forms = Hyperlang.Codegen.replace_module_and_version(forms, module, version)
-
-            result =
-              with :ok <- Hyperlang.Codegen.verify_generated_forms(loaded_forms, module),
-                   :ok <-
-                     Hyperlang.Scope.with_scope(scope, fn ->
-                       compile_and_load(module, loaded_forms, manifest.limits)
-                     end) do
-                :ok
-              end
-
-            case result do
-              :ok ->
-                key = {@loaded_artifact_key, content_hash}
-                clock = state.clock + 1
-                # Published from inside the server: reclamation erases these
-                # keys, so an artifact must never publish one after the fact.
-                :persistent_term.put(
-                  key,
-                  %Slot{id: id, module: module, version: version, program: program}
-                )
-
-                slot = :persistent_term.get(key)
-                :ets.insert(@slot_versions, {module, version})
-
-                new_state =
-                  state
-                  |> put_in(
-                    [:slots, id],
-                    Map.merge(slot_state, %{
-                      state: :used,
-                      version: version,
-                      content_hash: content_hash,
-                      loaded_at: clock,
-                      released?: false
-                    })
-                  )
-                  |> put_in([:artifacts, content_hash], id)
-                  |> Map.put(:clock, clock)
-
-                {:reply, {:ok, slot}, new_state}
-
-              {:error, error} ->
-                # The slot was taken but never loaded: hand it straight back.
-                {:reply, {:error, error},
-                 put_in(state, [:slots, id], Map.put(slot_state, :state, :free))}
-            end
-        end
-    end
+    {reply, state} = load_artifact(state, program, scope)
+    {:reply, reply, state}
   end
 
   def handle_call({:release, content_hash}, _from, state) do
@@ -255,33 +187,37 @@ defmodule Hyperlang.CodeServer do
     end
   end
 
-  def handle_call({:pin, module, pid, scope}, _from, state) do
-    with {:ok, id} <- Map.fetch(state.modules, module),
-         %{state: :used, content_hash: hash} when is_binary(hash) <- Map.fetch!(state.slots, id),
-         %Slot{id: ^id, program: program} <-
-           :persistent_term.get({@loaded_artifact_key, hash}, nil) do
-      held = Map.get(state.scope_pins, scope, %{})
+  # Load and pin in one server call: no release or reclamation can run
+  # between them, so the pinned slot holds exactly `program`. The scope bound
+  # is checked before a load, so a scope at its bound cannot make the pool
+  # load anything.
+  def handle_call({:pin, program, pid, scope}, _from, state) do
+    held = Map.get(state.scope_pins, scope, %{})
 
-      cond do
-        pinned?(state, pid, id) ->
-          {:reply, {:ok, program}, state}
-
-        Map.has_key?(held, id) or map_size(held) < Hyperlang.Scope.policy(scope).max_code_pins ->
-          {:reply, {:ok, program}, add_pin(state, pid, id, scope)}
-
-        true ->
-          {:reply,
-           {:error,
-            Hyperlang.Error.new(:code_pool, "scope code pin limit reached",
-              details: %{reason: :pin_limit}
-            )}, state}
+    {loaded, literal} =
+      case loaded_artifact(state, program.content_hash) do
+        {:ok, %Slot{id: id, program: literal}} -> {id, literal}
+        :miss -> {nil, nil}
       end
-    else
-      _ ->
+
+    cond do
+      loaded != nil and pinned?(state, pid, loaded) ->
+        {:reply, {:ok, literal}, state}
+
+      Map.has_key?(held, loaded) or map_size(held) < Hyperlang.Scope.policy(scope).max_code_pins ->
+        case load_artifact(state, program, scope) do
+          {{:ok, %Slot{id: id, program: literal}}, state} ->
+            {:reply, {:ok, literal}, add_pin(state, pid, id, scope)}
+
+          {{:error, error}, state} ->
+            {:reply, {:error, error}, state}
+        end
+
+      true ->
         {:reply,
          {:error,
-          Hyperlang.Error.new(:code_pool, "generated module is not loaded",
-            details: %{reason: :not_loaded}
+          Hyperlang.Error.new(:code_pool, "scope code pin limit reached",
+            details: %{reason: :pin_limit}
           )}, state}
     end
   end
@@ -375,6 +311,82 @@ defmodule Hyperlang.CodeServer do
         end
       end)
     end)
+  end
+
+  # Load `program` into a slot of its window, or find it already loaded.
+  # Runs inside the server, so a pin taken right after it in the same call
+  # (`pin/2`) holds exactly this program.
+  defp load_artifact(state, program, scope) do
+    %Hyperlang.Program{content_hash: content_hash, artifact: %{forms: forms, manifest: manifest}} =
+      program
+
+    case loaded_artifact(state, content_hash) do
+      {:ok, slot} ->
+        {{:ok, slot}, state}
+
+      :miss ->
+        case take_slot(state, manifest.code_pool.size) do
+          {:none, state} ->
+            {{:error, Hyperlang.Error.new(:code_pool, "no generated code slots available")},
+             state}
+
+          {id, slot_state, state} ->
+            # The slot version NEVER resets, not even across reclamation: a
+            # stale runtime that still names this module carries the version it
+            # was bound to, and `Runtime.new_context/3` refuses a mismatch. That
+            # monotonic version is what makes slot reuse fail closed
+            # (`:invalid_token`) instead of running one guest's call against
+            # another guest's code.
+            version = slot_state.version + 1
+            module = slot_state.module
+            loaded_forms = Hyperlang.Codegen.replace_module_and_version(forms, module, version)
+
+            result =
+              with :ok <- Hyperlang.Codegen.verify_generated_forms(loaded_forms, module),
+                   :ok <-
+                     Hyperlang.Scope.with_scope(scope, fn ->
+                       compile_and_load(module, loaded_forms, manifest.limits)
+                     end) do
+                :ok
+              end
+
+            case result do
+              :ok ->
+                key = {@loaded_artifact_key, content_hash}
+                clock = state.clock + 1
+                # Published from inside the server: reclamation erases these
+                # keys, so an artifact must never publish one after the fact.
+                :persistent_term.put(
+                  key,
+                  %Slot{id: id, module: module, version: version, program: program}
+                )
+
+                slot = :persistent_term.get(key)
+                :ets.insert(@slot_versions, {module, version})
+
+                new_state =
+                  state
+                  |> put_in(
+                    [:slots, id],
+                    Map.merge(slot_state, %{
+                      state: :used,
+                      version: version,
+                      content_hash: content_hash,
+                      loaded_at: clock,
+                      released?: false
+                    })
+                  )
+                  |> put_in([:artifacts, content_hash], id)
+                  |> Map.put(:clock, clock)
+
+                {{:ok, slot}, new_state}
+
+              {:error, error} ->
+                # The slot was taken but never loaded: hand it straight back.
+                {{:error, error}, put_in(state, [:slots, id], Map.put(slot_state, :state, :free))}
+            end
+        end
+    end
   end
 
   defp loaded_artifact(state, content_hash) do

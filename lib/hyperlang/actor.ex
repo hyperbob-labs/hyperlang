@@ -1,17 +1,68 @@
-defmodule Hyperlang.Callback do
-  @moduledoc false
+defmodule Hyperlang.Actor do
+  @moduledoc """
+  The `GenServer` callback module that runs a program's OTP callbacks.
 
-  # The OTP callback shell behind `Hyperlang.module/1`. `init` pins the code
-  # slot the callback module names (`Hyperlang.CodeServer.pin/2`), so the
-  # module and the program literal the actor references stay loaded until the
-  # actor exits. Every callback is one
-  # `Hyperlang.run/4` in the actor process (`run_in_caller?: true`), so the
-  # per-callback policy limits (`wall_ms`, `max_reductions`/`budget`,
-  # `heap_words`) apply to each callback. The actor-lifetime limits
-  # (`rate`, `ceiling`) are owned by one `Hyperlang.Limits` group that `init`
-  # creates from `spec.policy` and attaches to the actor process, so the host
-  # never wires limits by hand. Guest stdout from callbacks is dropped: an
-  # OTP callback return has no slot for it.
+  Start an actor with the program value itself:
+
+      GenServer.start(Hyperlang.Actor, {spec, program, arg})
+      GenServer.start_link(Hyperlang.Actor, {spec, program, arg}, name: MyActor)
+
+  `spec` is the `Hyperlang.run/4` spec (`%{bindings: ..., policy: ...,
+  syscall: ...}`), and every callback runs under it. `arg` is the guest
+  `init/1` argument. The program must export `init/1`; `handle_call/3`,
+  `handle_cast/2`, `handle_info/2`, `handle_continue/2`, `terminate/2` and
+  `code_change/3` are used when exported. As OTP does for a callback module
+  without them, an actor drops a message when the program has no
+  `handle_info/2` and runs nothing on exit when it has no `terminate/2`. A
+  missing required callback stops the actor with the typed `run/4` error
+  (`category: :export`). Guest stdout from callbacks is dropped.
+
+  ## The actor runs exactly its program
+
+  The actor's `init/1` loads `program` and pins its code slot in one step, so
+  a release or code-pool pressure before `init/1` cannot leave the actor
+  without code or with another program's code. The pin holds until the
+  actor exits. It is charged to the actor's scope (`spec.policy.scope`, else
+  the actor's own default scope), which may pin at most `max_code_pins`
+  distinct slots. `Hyperlang.load/1` loads a program ahead of time; it is
+  optional.
+
+  ## Limits
+
+  Every callback is one `Hyperlang.run/4` in the actor process, so the
+  per-callback policy limits (`wall_ms`, `max_reductions`/`budget`,
+  `heap_words`) apply to each callback. The actor-lifetime limits (`rate`,
+  `ceiling`) hold for the actor's whole life, with no host wiring.
+
+  ## Errors
+
+  `GenServer.start/3` returns `{:error, {:hyperlang, error}}` when `init/1`
+  stops:
+
+    * `category: :api` when the init argument is not
+      `{spec_map, %Hyperlang.Program{}, arg}`;
+    * `category: :code_pool` with `details.reason: :pin_limit` at the scope
+      bound, or `category: :code_pool` when no slot of the program's
+      `code_pool` window is free;
+    * the error of the guest `init/1`.
+
+  ## Supervision
+
+  `child_spec/1` takes the same `{spec, program, arg}` tuple:
+
+      children = [{Hyperlang.Actor, {spec, program, arg}}]
+
+  The child id is `Hyperlang.Actor` and the restart is `:permanent`, as for
+  any `GenServer`. Supervise more than one actor under one supervisor by
+  giving each its own id:
+
+      Supervisor.child_spec({Hyperlang.Actor, {spec, program, arg}}, id: {:counter, 1})
+
+  A restarted actor runs `init/1` again with the same program, so it pins
+  and, if needed, loads the program again.
+  """
+
+  use GenServer
 
   defmodule State do
     @moduledoc false
@@ -20,20 +71,29 @@ defmodule Hyperlang.Callback do
 
   @actor_limit_keys [:rate, :ceiling]
 
-  # Never send the OTP status map (which can contain program artifacts, the
-  # process dictionary, host spec or policy) through the guest term boundary.
-  # The host formatter owns redaction on every success and failure path.
-  def dispatch(_module, :format_status, [%{} = status]) do
-    Map.new(status, fn
-      {:state, _} -> {:state, :redacted}
-      {:reason, reason} -> {:reason, safe_status_reason(reason)}
-      {key, _} -> {key, :redacted}
-    end)
+  @doc """
+  A child specification that starts the actor with
+  `GenServer.start_link(Hyperlang.Actor, {spec, program, arg})`.
+  """
+  @spec child_spec({map(), Hyperlang.Program.t(), term()}) :: Supervisor.child_spec()
+  def child_spec(init_arg) do
+    %{
+      id: __MODULE__,
+      start: {GenServer, :start_link, [__MODULE__, init_arg]},
+      restart: :permanent
+    }
   end
 
-  def dispatch(module, :init, [init_arg]) do
-    with {:ok, spec, guest_arg} <- init_authority(init_arg),
-         {:ok, program} <- Hyperlang.CodeServer.pin(module, actor_scope(spec)),
+  # `init` loads the program and pins its slot in one
+  # `Hyperlang.CodeServer.pin/2` call: no release or reclamation can come
+  # between the two. The pinned slot's literal replaces the caller's value,
+  # so the actor's state never holds a heap copy of the program.
+  @impl true
+  def init(
+        {%{} = spec, %Hyperlang.Program{content_hash: hash, artifact: %{}} = program, guest_arg}
+      )
+      when is_binary(hash) do
+    with {:ok, program} <- Hyperlang.CodeServer.pin(program, actor_scope(spec)),
          {:ok, spec} <- attach_actor_limits(spec),
          {:ok, result, private} <- invoke(spec, program, "init/1", [guest_arg]) do
       put_private(wrap_init(result, program, spec), private)
@@ -42,7 +102,52 @@ defmodule Hyperlang.Callback do
     end
   end
 
-  def dispatch(_module, function, args) do
+  def init(_init_arg),
+    do:
+      {:stop,
+       {:hyperlang, Hyperlang.Terms.sanitize_error(%{category: :api, reason: :bad_actor_init})}}
+
+  @impl true
+  def handle_call(request, from, state), do: dispatch(:handle_call, [request, from, state])
+
+  @impl true
+  def handle_cast(request, state), do: dispatch(:handle_cast, [request, state])
+
+  @impl true
+  def handle_info(message, %State{program: program} = state) do
+    if exports?(program, "handle_info/2"),
+      do: dispatch(:handle_info, [message, state]),
+      else: {:noreply, state}
+  end
+
+  def handle_info(_message, state), do: {:stop, {:hyperlang, :invalid_callback_state}, state}
+
+  @impl true
+  def handle_continue(continue, state), do: dispatch(:handle_continue, [continue, state])
+
+  @impl true
+  def terminate(reason, %State{program: program} = state) do
+    if exports?(program, "terminate/2"), do: dispatch(:terminate, [reason, state]), else: :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
+  @impl true
+  def code_change(old, state, extra), do: dispatch(:code_change, [old, state, extra])
+
+  # Never send the OTP status map (which can contain program artifacts, the
+  # process dictionary, host spec or policy) through the guest term boundary.
+  # The host formatter owns redaction on every success and failure path.
+  @impl true
+  def format_status(%{} = status) do
+    Map.new(status, fn
+      {:state, _} -> {:state, :redacted}
+      {:reason, reason} -> {:reason, safe_status_reason(reason)}
+      {key, _} -> {key, :redacted}
+    end)
+  end
+
+  defp dispatch(function, args) do
     case split_state(function, args) do
       {:ok, %State{} = state, guest_args} ->
         case invoke(
@@ -61,12 +166,11 @@ defmodule Hyperlang.Callback do
     end
   end
 
-  defp init_authority({%{} = spec, guest_arg}), do: {:ok, spec, guest_arg}
-
-  defp init_authority(%{spec: %{} = spec, args: guest_arg}),
-    do: {:ok, spec, guest_arg}
-
-  defp init_authority(_init_arg), do: {:error, :missing_spec}
+  defp exports?(
+         %Hyperlang.Program{artifact: %{manifest: %{exports: %{functions: functions}}}},
+         id
+       ),
+       do: Map.has_key?(functions, id)
 
   # The actor's code slot is pinned for the actor's life and charged to the
   # scope its callbacks run under (the scope `Hyperlang.run/4` selects).

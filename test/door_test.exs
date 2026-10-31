@@ -25,7 +25,21 @@ defmodule Hyperlang.DoorTest do
   end
 
   test "the top-level door is the complete public surface" do
-    assert Hyperlang.__info__(:functions) == [module: 1, program: 1, program: 2, run: 4]
+    assert Hyperlang.__info__(:functions) == [load: 1, program: 1, program: 2, run: 4]
+
+    # The actor callback module: GenServer callbacks plus `child_spec/1`.
+    assert Hyperlang.Actor.__info__(:functions) |> Keyword.keys() |> Enum.uniq() |> Enum.sort() ==
+             Enum.sort([
+               :child_spec,
+               :code_change,
+               :format_status,
+               :handle_call,
+               :handle_cast,
+               :handle_continue,
+               :handle_info,
+               :init,
+               :terminate
+             ])
   end
 
   test "program values are eager, immutable, and caller-key cached" do
@@ -103,7 +117,7 @@ defmodule Hyperlang.DoorTest do
     def call(%{offset: offset}, :get, [value]), do: value + offset
   end
 
-  test "a confined module is an OTP callback whose limits come from its spec" do
+  test "an actor is an OTP callback whose limits come from its spec" do
     manifest = %{
       terms: %{public: :erlang},
       result: %{name: "init", arity: 1},
@@ -117,8 +131,6 @@ defmodule Hyperlang.DoorTest do
                manifest: manifest
              })
 
-    module = Hyperlang.module(program)
-
     spec = %{
       bindings: %{"kv" => {KV, %{offset: 10}}},
       policy: %{
@@ -128,7 +140,7 @@ defmodule Hyperlang.DoorTest do
       }
     }
 
-    assert {:ok, pid} = GenServer.start(module, {spec, 0})
+    assert {:ok, pid} = GenServer.start(Hyperlang.Actor, {spec, program, 0})
     assert 11 = GenServer.call(pid, "inc")
 
     monitor = Process.monitor(pid)
@@ -147,7 +159,7 @@ defmodule Hyperlang.DoorTest do
       | policy: %{max_reductions: nil, wall_ms: :infinity, ceiling: 50_000}
     }
 
-    assert {:ok, pid} = GenServer.start(module, {ceiling_spec, 0})
+    assert {:ok, pid} = GenServer.start(Hyperlang.Actor, {ceiling_spec, program, 0})
     monitor = Process.monitor(pid)
     GenServer.cast(pid, "spin")
     assert_receive {:DOWN, ^monitor, :process, ^pid, {:hyperlang_limit, :ceiling}}, 2_000

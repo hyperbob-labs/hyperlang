@@ -20,6 +20,13 @@ defmodule CodeServerSlotReclamationTest do
     program
   end
 
+  # The generated module a program is loaded as (internal: hosts never see
+  # slot names).
+  defp slot_module(program) do
+    {:ok, slot} = Hyperlang.CodeServer.load(program)
+    slot.module
+  end
+
   defp slot_id(module) do
     [_, id] = Regex.run(~r/^hyperlang_slot_0*(\d+)$/, Atom.to_string(module))
     String.to_integer(id)
@@ -36,7 +43,7 @@ defmodule CodeServerSlotReclamationTest do
     slot_ids =
       for value <- 1..(@window * 2) do
         program = program!(value)
-        module = Hyperlang.module(program)
+        module = slot_module(program)
         assert {:ok, ^value, _meta} = Hyperlang.run(@run_spec, program, :entry, [0])
         slot_id(module)
       end
@@ -50,12 +57,12 @@ defmodule CodeServerSlotReclamationTest do
 
   test "a reclaimed artifact reloads on its next use" do
     program = program!(4242)
-    first = Hyperlang.module(program)
+    first = slot_module(program)
 
     # Oversubscribe the window so the artifact above loses its slot.
-    for value <- 5000..(5000 + @window * 2), do: Hyperlang.module(program!(value))
+    for value <- 5000..(5000 + @window * 2), do: slot_module(program!(value))
 
-    second = Hyperlang.module(program)
+    second = slot_module(program)
 
     assert :code.is_loaded(second) != false
     assert {:ok, 4242, _meta} = Hyperlang.run(@run_spec, program, :entry, [0])
@@ -64,7 +71,7 @@ defmodule CodeServerSlotReclamationTest do
 
   test "release purges the module and frees the slot" do
     program = program!(7001)
-    module = Hyperlang.module(program)
+    module = slot_module(program)
     id = slot_id(module)
 
     assert %{state: :used, content_hash: hash} = Map.fetch!(slot_states(), id)
@@ -81,7 +88,7 @@ defmodule CodeServerSlotReclamationTest do
 
   test "a released slot keeps its version so stale runtimes cannot be replayed into it" do
     program = program!(7002)
-    id = program |> Hyperlang.module() |> slot_id()
+    id = program |> slot_module() |> slot_id()
     version = Map.fetch!(slot_states(), id).version
 
     assert :ok = Hyperlang.CodeServer.release(program.content_hash)

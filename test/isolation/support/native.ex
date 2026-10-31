@@ -48,7 +48,7 @@ defmodule Hyperlang.Isolation.Native do
           }
         )
 
-      Hyperlang.module(p)
+      :ok = Hyperlang.load(p)
 
       samples =
         for _ <- 1..20 do

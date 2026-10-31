@@ -1,11 +1,12 @@
 defmodule CodeSlotPinTest do
   use ExUnit.Case, async: false
 
-  # A live OTP actor pins the code slot its callback module names. A pinned
-  # slot is never released or reclaimed, so the actor's module and program
-  # literal stay loaded for the actor's whole life. Pins are charged to the
-  # actor's scope and bounded by its `max_code_pins` policy; a process's pins
-  # go when it exits.
+  # An actor (`Hyperlang.Actor`) loads and pins its program's code slot in
+  # one CodeServer call. A pinned slot is never released or reclaimed, so the
+  # actor's generated module and program literal stay loaded for the actor's
+  # whole life, and no release or slot reuse can make an actor start without
+  # code or with another program. Pins are charged to the actor's scope and
+  # bounded by its `max_code_pins` policy; a process's pins go when it exits.
 
   alias Hyperlang.{CodeServer, Scope}
 
@@ -20,13 +21,22 @@ defmodule CodeSlotPinTest do
   spin(Count) -> spin(Count - 1).
   """
 
+  @offset_counter """
+  -module(counter).
+  -export([init/1, handle_call/3]).
+  init(Start) -> {ok, Start + OFFSET + SALT - SALT}.
+  handle_call(<<"get">>, _From, N) -> {reply, N, N};
+  handle_call(<<"inc">>, _From, N) -> {reply, N + 1, N + 1}.
+  """
+
   defp program(salt, window, source \\ @counter, entry \\ "counter.erl") do
     source =
-      String.replace(
-        source,
+      source
+      |> String.replace(
         "init(Start) -> {ok, Start}.",
         "init(Start) -> {ok, Start + #{salt} - #{salt}}."
       )
+      |> String.replace("SALT", Integer.to_string(salt))
 
     {:ok, program} =
       Hyperlang.program(%{
@@ -43,7 +53,7 @@ defmodule CodeSlotPinTest do
   end
 
   defp start(program, start, policy),
-    do: GenServer.start(Hyperlang.module(program), {%{policy: policy}, start})
+    do: GenServer.start(Hyperlang.Actor, {%{policy: policy}, program, start})
 
   defp start!(program, start, policy \\ %{}) do
     {:ok, pid} = start(program, start, policy)
@@ -51,6 +61,13 @@ defmodule CodeSlotPinTest do
   end
 
   defp code_state, do: :sys.get_state(CodeServer)
+
+  # The generated module a program is loaded as (internal: hosts never see
+  # slot names).
+  defp slot_module(program) do
+    {:ok, slot} = CodeServer.load(program)
+    slot.module
+  end
 
   defp slot(module) do
     [_, id] = Regex.run(~r/^hyperlang_slot_0*(\d+)$/, Atom.to_string(module))
@@ -110,8 +127,8 @@ defmodule CodeSlotPinTest do
     baseline: baseline
   } do
     program = program(1, 6)
-    module = Hyperlang.module(program)
     a = start!(program, 10)
+    module = slot_module(program)
     b = start!(program, 20)
     assert %{pins: 2} = slot(module)
 
@@ -121,7 +138,7 @@ defmodule CodeSlotPinTest do
     assert record?(program)
 
     # Pool churn in the same window cannot take the pinned slot.
-    for salt <- 100..115, do: Hyperlang.module(program(salt, 6))
+    for salt <- 100..115, do: :ok = Hyperlang.load(program(salt, 6))
     assert %{state: :used, content_hash: hash} = slot(module)
     assert hash == program.content_hash
 
@@ -150,17 +167,18 @@ defmodule CodeSlotPinTest do
     actors = for {program, n} <- Enum.with_index(programs), do: start!(program, n)
     extra = program(299, window)
 
-    assert_raise ArgumentError, ~r/code_pool/, fn -> Hyperlang.module(extra) end
+    assert {:error, %{category: :code_pool}} = Hyperlang.load(extra)
     assert {:error, %{category: :code_pool}} = Hyperlang.run(%{}, extra, :entry, [1])
+    assert {:error, {:hyperlang, %{category: :code_pool}}} = start(extra, 1, %{})
 
     for {pid, n} <- Enum.with_index(actors), do: assert(GenServer.call(pid, "inc") == n + 1)
 
     [first | rest] = actors
-    freed = Hyperlang.module(hd(programs))
+    freed = slot_module(hd(programs))
     :ok = stop(first)
 
     # The unpinned slot is the only victim.
-    assert Hyperlang.module(extra) == freed
+    assert slot_module(extra) == freed
     assert {:ok, {:ok, 1}, _meta} = Hyperlang.run(%{}, extra, :entry, [1])
     for {pid, n} <- Enum.zip(rest, 1..2), do: assert(GenServer.call(pid, "inc") == n + 2)
 
@@ -188,24 +206,264 @@ defmodule CodeSlotPinTest do
 
     for salt <- 301..340 do
       assert :ok = CodeServer.release(program.content_hash)
-      Hyperlang.module(program(salt, window))
+      :ok = Hyperlang.load(program(salt, window))
     end
 
     for caller <- callers, do: assert_receive({:caller_done, ^caller}, 60_000)
     assert GenServer.call(pid, "inc") == 801
-    module = Hyperlang.module(program)
+    module = slot_module(program)
     :ok = stop(pid)
     assert %{state: :free} = slot(module)
     assert_pins(baseline)
   end
 
-  test "an actor started after its slot was reclaimed fails to start and pins nothing", %{
+  # The two outcomes of the former `module/1` race. A host used to start
+  # `GenServer.start(Hyperlang.module(program), ...)`; a release between the
+  # two calls made the start fail with `undef`, and a reuse of the slot made
+  # the actor run the other program. A `Hyperlang.Actor` takes the program
+  # value, and `init/1` loads and pins it in one step, so the slot's state at
+  # the time of the start does not matter.
+  test "a slot freed before init: the actor reloads and runs its program", %{baseline: baseline} do
+    program = program(400, 1, @offset_counter |> String.replace("OFFSET", "0"))
+    assert :ok = Hyperlang.load(program)
+    assert :ok = CodeServer.release(program.content_hash)
+    refute record?(program)
+
+    assert {:ok, pid} = start(program, 1, %{})
+    assert GenServer.call(pid, "get") == 1
+    assert record?(program)
+
+    :ok = stop(pid)
+    assert_pins(baseline)
+  end
+
+  test "a slot reused by another program before init: the actor runs its own program", %{
     baseline: baseline
   } do
-    program = program(400, 6)
-    module = Hyperlang.module(program)
-    assert :ok = CodeServer.release(program.content_hash)
-    assert {:error, _reason} = GenServer.start(module, {%{}, 1})
+    mine = program(401, 1, @offset_counter |> String.replace("OFFSET", "0"))
+    theirs = program(402, 1, @offset_counter |> String.replace("OFFSET", "1000"))
+    module = slot_module(mine)
+    assert :ok = CodeServer.release(mine.content_hash)
+    assert slot_module(theirs) == module
+
+    assert {:ok, pid} = start(mine, 1, %{})
+    assert GenServer.call(pid, "get") == 1
+    # The one-slot window now holds `mine` again, pinned by the actor.
+    assert %{content_hash: hash, pins: 1} = slot(module)
+    assert hash == mine.content_hash
+    assert {:error, {:hyperlang, %{category: :code_pool}}} = start(theirs, 1, %{})
+
+    :ok = stop(pid)
+    assert {:ok, other} = start(theirs, 1, %{})
+    assert GenServer.call(other, "get") == 1001
+    :ok = stop(other)
+    assert_pins(baseline)
+  end
+
+  test "a generated module is not an OTP callback module" do
+    program = program(403, 6)
+    module = slot_module(program)
+    refute function_exported?(module, :init, 1)
+    refute function_exported?(module, :handle_call, 3)
+    assert {:error, {:undef, _}} = GenServer.start(module, {%{}, 1})
+  end
+
+  test "start_link links the actor, takes GenServer options, and rejects bad input", %{
+    baseline: baseline
+  } do
+    program = program(406, 6)
+    parent = self()
+
+    owner =
+      spawn(fn ->
+        {:ok, pid} =
+          GenServer.start_link(Hyperlang.Actor, {%{}, program, 1}, name: :code_slot_pin_named)
+
+        send(parent, {:started, pid})
+        receive do: (:exit -> exit(:shutdown))
+      end)
+
+    assert_receive {:started, pid}, 5_000
+    assert GenServer.call(:code_slot_pin_named, "inc") == 2
+    assert %{pins: 1} = slot(slot_module(program))
+    monitor = Process.monitor(pid)
+    send(owner, :exit)
+    assert_receive {:DOWN, ^monitor, :process, ^pid, :shutdown}, 5_000
+    assert_pins(baseline)
+
+    for bad <- [{%{}, :not_a_program, 1}, {:not_a_spec, program, 1}, {program, %{}, 1}, :bad] do
+      assert {:error, {:hyperlang, %{category: :api}}} = GenServer.start(Hyperlang.Actor, bad)
+    end
+
+    assert {:error, %{category: :api}} = Hyperlang.load(:not_a_program)
+    assert_pins(baseline)
+  end
+
+  test "a supervisor starts actors from child specs and restarts them", %{baseline: baseline} do
+    p1 = program(407, 6)
+    p2 = program(408, 6)
+
+    children = [
+      Supervisor.child_spec({Hyperlang.Actor, {%{}, p1, 10}}, id: :one),
+      Supervisor.child_spec({Hyperlang.Actor, {%{}, p1, 20}}, id: :two),
+      {Hyperlang.Actor, {%{}, p2, 30}}
+    ]
+
+    {:ok, sup} = Supervisor.start_link(children, strategy: :one_for_one)
+    pids = Map.new(Supervisor.which_children(sup), fn {id, pid, :worker, _} -> {id, pid} end)
+    assert Map.keys(pids) |> Enum.sort() == Enum.sort([:one, :two, Hyperlang.Actor])
+    assert GenServer.call(pids.one, "inc") == 11
+    assert GenServer.call(pids.two, "inc") == 21
+    assert GenServer.call(pids[Hyperlang.Actor], "inc") == 31
+
+    # A released slot under a crashed actor: the restart loads and pins again.
+    :ok = CodeServer.release(p1.content_hash)
+    monitor = Process.monitor(pids.one)
+    Process.exit(pids.one, :kill)
+    assert_receive {:DOWN, ^monitor, :process, _, :killed}, 5_000
+
+    restarted =
+      Enum.find_value(1..500, fn _ ->
+        case List.keyfind(Supervisor.which_children(sup), :one, 0) do
+          {:one, pid, _, _} when is_pid(pid) and pid != pids.one -> pid
+          _ -> Process.sleep(10) && nil
+        end
+      end)
+
+    assert GenServer.call(restarted, "inc") == 11
+    assert %{content_hash: hash} = slot(slot_module(p1))
+    assert hash == p1.content_hash
+
+    # Two actors with the default id collide, as for any GenServer.
+    parent = self()
+
+    spawn(fn ->
+      Process.flag(:trap_exit, true)
+
+      send(
+        parent,
+        {:duplicate,
+         Supervisor.start_link(
+           [{Hyperlang.Actor, {%{}, p1, 1}}, {Hyperlang.Actor, {%{}, p2, 2}}],
+           strategy: :one_for_one
+         )}
+      )
+    end)
+
+    assert_receive {:duplicate,
+                    {:error, {:start_spec, {:duplicate_child_name, Hyperlang.Actor}}}},
+                   5_000
+
+    assert %{id: Hyperlang.Actor, restart: :permanent, start: {GenServer, :start_link, _}} =
+             Supervisor.child_spec({Hyperlang.Actor, {%{}, p1, 1}}, [])
+
+    :ok = Supervisor.stop(sup)
+    assert_pins(baseline)
+  end
+
+  test "an actor started with a heap copy of its program keeps only the literal", %{
+    baseline: baseline
+  } do
+    program = program(409, 6)
+    # A heap copy, as a host holds it after `Hyperlang.program/1`.
+    copy = :erlang.binary_to_term(:erlang.term_to_binary(program))
+    pid = start!(copy, 1)
+    assert GenServer.call(pid, "inc") == 2
+    {:ok, %{program: literal}} = CodeServer.load(program)
+    %{program: held} = :sys.get_state(pid)
+    assert :erts_debug.same(held, literal)
+    :erlang.garbage_collect(pid)
+    {:memory, bytes} = Process.info(pid, :memory)
+    assert bytes < :erts_debug.flat_size(program) * 8, "actor holds #{bytes} bytes"
+    :ok = stop(pid)
+    assert_pins(baseline)
+  end
+
+  test "optional callbacks follow the program's exports", %{baseline: baseline} do
+    # `@counter` exports neither handle_info/2, handle_cast/2 nor terminate/2.
+    pid = start!(program(405, 6), 3)
+    send(pid, :unexpected)
+    assert GenServer.call(pid, "inc") == 4
+
+    monitor = Process.monitor(pid)
+    GenServer.cast(pid, "inc")
+    # A required callback the program lacks is a typed stop, not `undef`.
+    assert_receive {:DOWN, ^monitor, :process, ^pid, {:hyperlang, %{category: :export}}}, 5_000
+    assert_pins(baseline)
+  end
+
+  test "init in a full window fails with code_pool and pins nothing", %{baseline: baseline} do
+    window = 2
+    extra = program(410, window)
+    assert :ok = Hyperlang.load(extra)
+    assert :ok = CodeServer.release(extra.content_hash)
+    actors = for salt <- 411..412, do: start!(program(salt, window), 0)
+
+    assert {:error, {:hyperlang, %{category: :code_pool}}} = start(extra, 1, %{})
+
+    :ok = stop(hd(actors))
+    assert {:ok, pid} = start(extra, 7, %{})
+    assert GenServer.call(pid, "inc") == 8
+
+    Enum.each([pid | tl(actors)], &stop/1)
+    assert_pins(baseline)
+  end
+
+  test "starts racing releases and slot reuse always run their own program", %{
+    baseline: baseline
+  } do
+    window = 2
+    source = &(@offset_counter |> String.replace("OFFSET", Integer.to_string(&1)))
+    programs = for offset <- [0, 1000, 2000], do: program(420 + offset, window, source.(offset))
+    parent = self()
+
+    churner =
+      spawn_link(fn ->
+        Stream.cycle(programs)
+        |> Enum.reduce_while(0, fn program, n ->
+          receive do
+            :stop -> {:halt, n}
+          after
+            0 ->
+              CodeServer.release(program.content_hash)
+              Hyperlang.load(program)
+              {:cont, n + 1}
+          end
+        end)
+        |> then(&send(parent, {:churned, &1}))
+      end)
+
+    starters =
+      for {program, offset} <- Enum.zip(programs, [0, 1000, 2000]) do
+        Task.async(fn ->
+          for n <- 1..300, reduce: %{ok: 0, code_pool: 0} do
+            acc ->
+              case start(program, n, %{}) do
+                {:ok, pid} ->
+                  # The actor runs the program it was started with, nothing else.
+                  value = GenServer.call(pid, "get")
+                  GenServer.stop(pid)
+                  if value != n + offset, do: raise("ran #{value}, expected #{n + offset}")
+                  # The pool has no admission fairness: back-to-back restarts
+                  # of two programs keep a two-slot window pinned and starve
+                  # the third. A pause lets every program reach a slot.
+                  Process.sleep(1)
+                  Map.update!(acc, :ok, &(&1 + 1))
+
+                # A two-slot window, three programs: a start may find every
+                # slot pinned. Never `undef`, never a stale program.
+                {:error, {:hyperlang, %{category: :code_pool}}} ->
+                  Map.update!(acc, :code_pool, &(&1 + 1))
+              end
+          end
+        end)
+      end
+
+    counts = Task.await_many(starters, 120_000)
+    send(churner, :stop)
+    assert_receive {:churned, churned}, 10_000
+    assert churned > 0
+    assert Enum.all?(counts, &(&1.ok > 0)), inspect(counts)
     assert_pins(baseline)
   end
 
@@ -250,39 +508,30 @@ defmodule CodeSlotPinTest do
     :ok = Scope.close(scope_b)
   end
 
-  test "a process that initialises several callback modules pins each slot", %{
+  test "one process may pin several slots, and its exit drops each pin", %{
     baseline: baseline
   } do
     p1 = program(600, 16)
     p2 = program(601, 16)
-    {m1, m2} = {Hyperlang.module(p1), Hyperlang.module(p2)}
     parent = self()
 
-    # A host process may run the `init/1` of several callback modules (an
-    # event manager does this for its handlers).
     host =
       spawn(fn ->
-        {:ok, s1} = m1.init({%{}, 10})
-        {:ok, s2} = m2.init({%{}, 20})
+        {:ok, ^p1} = CodeServer.pin(p1, {__MODULE__, :host})
+        {:ok, ^p2} = CodeServer.pin(p2, {__MODULE__, :host})
         send(parent, :pinned)
-
-        receive do
-          :call ->
-            {:reply, r1, _} = m1.handle_call("inc", {self(), make_ref()}, s1)
-            {:reply, r2, _} = m2.handle_call("inc", {self(), make_ref()}, s2)
-            send(parent, {:replies, r1, r2})
-            receive do: (:exit -> :ok)
-        end
+        receive do: (:exit -> :ok)
       end)
 
     assert_receive :pinned, 5_000
+    {m1, m2} = {slot_module(p1), slot_module(p2)}
     assert %{pins: 1} = slot(m1)
     assert %{pins: 1} = slot(m2)
 
     assert :ok = CodeServer.release(p1.content_hash)
     assert :ok = CodeServer.release(p2.content_hash)
-    send(host, :call)
-    assert_receive {:replies, 11, 21}, 5_000
+    assert %{state: :used, released?: true} = slot(m1)
+    assert %{state: :used, released?: true} = slot(m2)
 
     send(host, :exit)
     assert %{state: :free} = await_slot(m1, &(&1.state == :free))

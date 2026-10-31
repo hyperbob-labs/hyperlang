@@ -20,7 +20,7 @@ adds three properties:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/comparison_dark.svg">
-  <img alt="Hyperlang against wasmex, Luerl and Dune, with erl_eval, peer nodes, OS processes and Docker as unsandboxed references. fib(25): Hyperlang 0.35 ms, wasmex 0.68 ms, interpreters 85 to 275 ms. Idle actor memory: Hyperlang 23 KiB, others 71 to 109 KiB. Noisy-neighbour p99 slowdown: Hyperlang 1.37x, Luerl 3.0x, Dune 35.7x. Tenant start from a compiled program: Hyperlang 0.05 ms, Luerl 0.03 ms, child VM about 115 ms." src="assets/comparison_light.svg" width="960">
+  <img alt="Hyperlang against wasmex, Luerl and Dune, with erl_eval, peer nodes, OS processes and Docker as unsandboxed references. fib(25): Hyperlang 0.35 ms, wasmex 0.68 ms, interpreters 85 to 275 ms. Idle actor memory: Hyperlang 23 KiB, others 71 to 109 KiB. Noisy-neighbour p99 slowdown: Hyperlang 1.65x, Luerl 3.0x, Dune 35.7x. Tenant start from a compiled program: Hyperlang 0.05 ms, Luerl 0.03 ms, child VM about 115 ms." src="assets/comparison_light.svg" width="960">
 </picture>
 
 Measurements are from one shared 16-core host (BEAM with 4 schedulers, load
@@ -36,7 +36,7 @@ neighbours:
   wasmex instance added 89 KiB, a Luerl state 71 KiB, a Dune session
   109 KiB, and a peer node or OS `erl` process 74 to 76 MiB.
 - **Noisy neighbours:** next to 16 CPU-bound tenants, a victim's p99 rose
-  1.4x with `Hyperlang.Scope` admission and priority classes, 3.0x in Luerl,
+  1.6x with `Hyperlang.Scope` admission and priority classes, 3.0x in Luerl,
   7.4x in `erl_eval` and 36x in Dune. A victim in its own peer node rose 1.1x.
 - **Tenant start:** a new tenant of a compiled program answered in 0.05 ms.
   Luerl took 0.03 ms, wasmex 0.08 ms and Dune 0.41 ms. A peer node or OS
@@ -151,7 +151,7 @@ Inferno OS that runs its userland as Hyperlang guests.
 
 ## Install
 
-Add `{:hyperlang, "~> 0.1.0"}` to `deps` in `mix.exs` and run `mix deps.get`.
+Add `{:hyperlang, "~> 0.2.0"}` to `deps` in `mix.exs` and run `mix deps.get`.
 
 Hyperlang needs Erlang/OTP 29 and Elixir 1.20 or later. The stdlib allowlist
 and the vendored OTP sources are pinned to OTP 29. Later OTP releases are
@@ -173,7 +173,7 @@ release measured the effect on a victim tenant:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/isolation_noisy_neighbours_dark.svg">
-  <img alt="Victim p99 latency next to 0, 1, 4 and 16 noisy tenants. With neighbours that have no scope policy it rises to 1.8x under CPU load, 9.4x under heap pressure and 1.4x under compile load. With the neighbours in background scopes with quotas it stays at 1.1x, 1.1x and 1.0x." src="assets/isolation_noisy_neighbours_light.svg" width="960">
+  <img alt="Victim p99 latency next to 0, 1, 4 and 16 noisy tenants. With neighbours that have no scope policy it rises to 2.4x under CPU load, 13.6x under heap pressure and 2.4x under compile load. With the neighbours in background scopes with quotas it rises to 1.7x, 2.1x and 1.9x." src="assets/isolation_noisy_neighbours_light.svg" width="960">
 </picture>
 
 Each point is the p99 of 1,000 requests from one latency-class tenant on a
@@ -184,14 +184,20 @@ guest module. The victim keeps its reserved latency slot in both series. The
 neighbours either have no scope policy or each run in their own
 `:background` scope with a CPU, heap-churn or compile quota.
 
+The quotas refill every 100 ms. A tenant spends each period's budget in a
+burst of a few milliseconds after the refill and is suspended for the rest,
+and the victim's p99 rises inside the burst. The 1,000 requests start at
+even intervals over 400 ms, so they cover four whole periods and every
+phase of a period equally.
+
 | Noisy tenants | 0 | 1 | 4 | 16 |
 |---|---:|---:|---:|---:|
-| CPU, no neighbour policy | 1.0x | 1.0x | 1.8x | 1.8x |
-| CPU, background scopes | 1.0x | 1.3x | 1.1x | 1.1x |
-| Heap, no neighbour policy | 1.0x | 1.0x | 4.3x | 9.4x |
-| Heap, background scopes | 1.0x | 0.9x | 1.0x | 1.1x |
-| Compile, no neighbour policy | 1.0x | 1.0x | 1.3x | 1.4x |
-| Compile, background scopes | 1.0x | 1.0x | 1.0x | 1.0x |
+| CPU, no neighbour policy | 1.0x | 1.4x | 2.4x | 2.4x |
+| CPU, background scopes | 1.0x | 1.4x | 1.7x | 1.7x |
+| Heap, no neighbour policy | 1.0x | 1.1x | 6.5x | 13.6x |
+| Heap, background scopes | 1.0x | 1.2x | 1.4x | 2.1x |
+| Compile, no neighbour policy | 1.0x | 1.5x | 2.4x | 2.4x |
+| Compile, background scopes | 1.0x | 1.5x | 1.7x | 1.9x |
 
 Resource control guarantees:
 
@@ -393,14 +399,15 @@ handle_call(<<"inc">>, _From, N) ->
 
 ## The door
 
-The public API is four functions:
+The public API is four functions and one callback module:
 
-| Function | Role |
+| Function or module | Role |
 | --- | --- |
 | `Hyperlang.program/1` | Compile a source value into an immutable `%Hyperlang.Program{}`. |
 | `Hyperlang.program/2` | Return a program cached under your key; compile on a miss. |
 | `Hyperlang.run/4` | Run one export of a program with the authority in a spec. |
-| `Hyperlang.module/1` | Return the program's confined OTP callback module. |
+| `Hyperlang.load/1` | Load a program into the code pool ahead of its first use. |
+| `Hyperlang.Actor` | The `GenServer` callback module that runs a program's OTP callbacks: `GenServer.start(Hyperlang.Actor, {spec, program, arg})`, or `{Hyperlang.Actor, {spec, program, arg}}` as a supervisor child. |
 
 `Hyperlang.Binding` is the behaviour for host capabilities, and
 `Hyperlang.Test` is the test kit.
@@ -661,8 +668,8 @@ an equal program value.
 A Durable Object is a single-threaded object with durable storage. Hyperlang
 builds the same shape from existing parts:
 
-- **Input gate:** `Hyperlang.module(program)` is a confined `GenServer`
-  callback module. The actor runs one callback at a time.
+- **Input gate:** `GenServer.start(Hyperlang.Actor, {spec, program, arg})`
+  starts a confined actor. The actor runs one callback at a time.
 - **Output gate:** storage is an ordinary binding passed in the spec, for
   example `{MyHost.Storage, %{ns: actor_id}}`. Binding calls are synchronous
   inside the callback, so a write-through storage binding returns only after
@@ -722,13 +729,13 @@ end
 table = :ets.new(:readme_storage, [:public])
 spec = %{bindings: %{"storage" => {Readme.Storage, %{table: table, ns: "counter-1"}}}}
 
-{:ok, pid} = GenServer.start(Hyperlang.module(program), {spec, "counter-1"})
+{:ok, pid} = GenServer.start(Hyperlang.Actor, {spec, program, "counter-1"})
 1 = GenServer.call(pid, "inc")
 2 = GenServer.call(pid, "inc")
 :ok = GenServer.stop(pid)
 
 # A new actor for the same id reloads from storage in init/1.
-{:ok, pid} = GenServer.start(Hyperlang.module(program), {spec, "counter-1"})
+{:ok, pid} = GenServer.start(Hyperlang.Actor, {spec, program, "counter-1"})
 3 = GenServer.call(pid, "inc")
 :ok = GenServer.stop(pid)
 ```

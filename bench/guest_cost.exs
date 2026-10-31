@@ -91,7 +91,7 @@ load = fn ->
 end
 
 warm = program.(0)
-{:ok, mod_pid} = GenServer.start(Hyperlang.module(actor), {%{}, "bench"})
+{:ok, mod_pid} = GenServer.start(Hyperlang.Actor, {%{}, actor, "bench"})
 key = {:guest_cost_bench, System.unique_integer([:positive])}
 
 {:ok, _} =
@@ -158,7 +158,7 @@ m0 = :erlang.memory(:total)
 
 pids =
   for i <- 1..1000 do
-    {:ok, pid} = GenServer.start(Hyperlang.module(actor), {%{}, "t#{i}"})
+    {:ok, pid} = GenServer.start(Hyperlang.Actor, {%{}, actor, "t#{i}"})
     1 = GenServer.call(pid, "inc")
     pid
   end

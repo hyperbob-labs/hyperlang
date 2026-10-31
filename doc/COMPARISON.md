@@ -22,7 +22,7 @@ Where we could not check a claim, we say so.
   `erl_eval` bindings 23 KiB. A peer node or an OS `erl` process added 74 to
   76 MiB.
 - **Noisy neighbours.** Next to 16 CPU-bound tenants, a latency-class
-  victim's p99 rose 1.4x (271 to 370 µs) with `Hyperlang.Scope`, and 3.2x
+  victim's p99 rose 1.6x (54 to 89 µs) with `Hyperlang.Scope`, and 3.6x
   without scope controls. In Luerl it rose 3.0x, in `erl_eval` 7.4x and in
   Dune 36x. A victim in its own peer node rose 1.1x.
 - **Tenant start.** A new tenant of a compiled program answered in 0.05 ms.
@@ -117,8 +117,10 @@ or node isolation:
 
 - Guests share schedulers, allocators, the garbage collector and the code
   server.
-- Heap-pressure latency with scope controls varied between 1.29x and 15.87x
-  of baseline in three trials, so that bound is not reliable.
+- Heap-pressure latency is bounded by the scope's churn rate. With 16
+  heap-pressure tenants in churn-limited background scopes, a victim's p99
+  stays within three times its unloaded p99 (tested; 1.19x-1.67x measured).
+  With churn enforcement disabled it rose to about 9x.
 - Some native calls do not yield. A 32 MB `binary:copy/2` ran for about
   163 ms before it could be stopped.
 - CPU, heap and churn enforcement is sampled and allows short bursts.
@@ -533,7 +535,7 @@ for `erl_eval`; WAT for wasmex.
 
 - **Hyperlang:** `Hyperlang.run/4` with default policy (a worker process per
   run), `run_in_caller?: true`, and a callback actor from
-  `Hyperlang.module/1` called with `GenServer.call/2`.
+  `Hyperlang.Actor` called with `GenServer.call/2`.
 - **Dune:** `Dune.Session` with the module defined once. Limits:
   `max_reductions: 100_000_000`, `max_heap_size: 10_000_000`,
   `timeout: 5_000`.
@@ -733,23 +735,36 @@ control. We report the victim's p99 in µs (three rounds, median and range),
 the host BEAM's CPU use in cores, and victim calls that failed or exceeded
 5 s.
 
+The `Hyperlang.Scope` noise runs under a CPU rate quota of 100,000
+reductions per 100 ms. Each tenant spends the budget in a burst of a few
+milliseconds after each refill and is suspended for the rest of the period.
+Back-to-back calls of a fast victim end before the first refill and never
+meet a burst. So call k starts no earlier than k × 0.4 ms into the window:
+the calls cover four whole periods at even phase spacing. Calls slower than
+0.4 ms run back to back. The noise of the other systems does not depend on
+the phase of a period.
+
 | System | Victim p99, 0 tenants | 4 tenants | 16 tenants | Host BEAM cores used, 16 tenants |
 | --- | ---: | ---: | ---: | ---: |
-| Hyperlang with `Hyperlang.Scope` (victim `:latency`, noise `:background` with a rate quota) | 271 (241–306) | 293 (275–421) | 370 (227–410) | 1.5 |
-| Hyperlang without scope controls | 224 (222–323) | 482 (400–532) | 711 (438–892) | 3.2 |
+| Hyperlang with `Hyperlang.Scope` (victim `:latency`, noise `:background` with a rate quota) | 54 (46–58) | 72 (67–84) | 89 (87–92) | 1.1 |
+| Hyperlang without scope controls | 51 (49–60) | 107 (99–129) | 182 (142–227) | 3.2 |
 | Luerl `luerl_sandbox` (`max_time` 100 ms) | 183 (150–200) | 272 (262–389) | 557 (451–1,399) | 3.4 |
 | `erl_eval` (host kill timer 100 ms) | 287 (204–321) | 715 (596–12,476) | 2,124 (1,365–2,310) | 3.4 |
 | Dune (`timeout` 100 ms) | 3,551 (2,720–8,347) | 18,969 (15,250–23,731) | 126,638 (106,458–137,530) | 3.5 |
 | wasmex (call timeout 100 ms) | 32 (29–72) | 145 (41–405) | not measured, see below | n/a |
 | Peer nodes (victim in one VM, noise in another) | 107 (73–817) | 152 (116–180) | 122 (63–426) | 0.25 (noise runs in the other VM) |
 
-Victim p99 in µs; three rounds, median and range. Load average 12.7 to 32.0.
+Victim p99 in µs; three rounds, median and range. The Hyperlang rows were
+measured with the even call spacing at load average 3.9 to 4.8. The other
+rows were measured with back-to-back calls at load average 12.7 to 32.0.
+The core counts include the victim's caller, which polls between calls.
 No victim call failed. After every cell, the VM's idle CPU use returned to
 at most 0.01 cores, so no cell left work running that could bias the next.
 
-- With scope controls, the victim's p99 rose 1.4x from 0 to 16 noisy
-  tenants. Without them it rose 3.2x. Luerl rose 3.0x, `erl_eval` 7.4x and
-  Dune 36x. The scope rate quota held the 16 noisy tenants to 1.5 cores.
+- With scope controls, the victim's p99 rose 1.6x from 0 to 16 noisy
+  tenants. Without them it rose 3.6x. Luerl rose 3.0x, `erl_eval` 7.4x and
+  Dune 36x. With the scope rate quota, the VM used 1.1 cores, victim
+  included.
 - The peer-node victim stayed flat because its noise ran in another VM with
   its own four schedulers, on a 16-core host. That is the OS-level
   separation Hyperlang does not provide.

@@ -1,6 +1,6 @@
 defmodule DurableActorTest do
   # A Durable Object approximated by the parts Hyperlang ships: the
-  # `Hyperlang.module/1` callback actor (one callback at a time is the input
+  # `Hyperlang.Actor` callback actor (one callback at a time is the input
   # gate), a host storage binding passed in the spec (a write-through call
   # that returns only after the write landed is the output gate), and
   # `init/1` reloading from storage (eviction and restart need no

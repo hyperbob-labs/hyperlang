@@ -210,35 +210,53 @@ defmodule Hyperlang.Isolation.Round2StressTest do
     Enum.each(trials, &assert_paired_bound/1)
   end
 
-  test "five fresh 16-tenant heap trials and throttle-to-kill reaction distributions" do
-    heap_trials =
-      for trial <- 1..5 do
-        session = Peer.start(schedulers: 4)
+  @tag :isolation_finding
+  test "R2-4 heap16 stays within three times unloaded in three fresh trials" do
+    trials =
+      for trial <- 1..3 do
+        session = Round2Peer.start(schedulers: 4)
 
         try do
-          assert %{result: row} = Peer.call(session, :contention, [:memory, 16, true])
-          Map.put(row, :trial, trial)
+          load_before = elem(System.cmd("uptime", []), 0)
+
+          assert %{result: row} =
+                   Round2Peer.call(session, :paired_contention, [:memory, 16], 120_000)
+
+          row =
+            Map.merge(row, %{
+              trial: trial,
+              load_before: load_before,
+              load_after: elem(System.cmd("uptime", []), 0)
+            })
+
+          save("heap16_trial_#{trial}", row)
+          row
         after
-          Peer.stop(session)
+          Round2Peer.stop(session)
         end
       end
 
-    reaction_session = Round2Peer.start(schedulers: 4)
+    save("heap16_trials", trials)
+    Enum.each(trials, &assert_paired_bound/1)
+  end
+
+  test "throttle-to-kill reaction distributions" do
+    session = Round2Peer.start(schedulers: 4)
 
     reactions =
       try do
         for mode <- [:cpu, :churn, :compile] do
-          assert %{result: row} = Round2Peer.call(reaction_session, :throttle_reaction, [mode])
+          assert %{result: row} = Round2Peer.call(session, :throttle_reaction, [mode])
           assert row.throttle_us > 0
           assert row.kill_us > row.throttle_us
           assert row.final.killed?
           row
         end
       after
-        Round2Peer.stop(reaction_session)
+        Round2Peer.stop(session)
       end
 
-    save("heap_trials_and_reactions", %{heap_trials: heap_trials, reactions: reactions})
+    save("throttle_reactions", reactions)
   end
 
   test "seeded randomized lifecycle interleavings preserve invariants" do
@@ -333,7 +351,7 @@ defmodule Hyperlang.Isolation.Round2StressTest do
     %{unloaded: unloaded, loaded: loaded} = row
 
     IO.puts(
-      "#{row.mode}64 paired p99 loaded/unloaded: #{inspect(loaded.p99_us)}/#{inspect(unloaded.p99_us)}; " <>
+      "#{row.mode}#{row.tenants} paired p99 loaded/unloaded: #{inspect(loaded.p99_us)}/#{inspect(unloaded.p99_us)}; " <>
         "kept #{unloaded.kept}/#{loaded.kept} of #{unloaded.samples}; host-starved loaded blocks " <>
         "#{row.starved_blocks}; stalled ticks #{row.stalled_ticks}/#{row.ticks}; " <>
         "raw p99 #{loaded.raw_p99_us}/#{unloaded.raw_p99_us}"

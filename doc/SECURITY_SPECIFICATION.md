@@ -25,9 +25,14 @@ The public API is four functions, and this specification secures exactly them:
   loader function only on a miss. The cache never widens a program.
 - `Hyperlang.run/4` runs one declared export with only the authority present
   in its `spec`. A run cannot add authority the program did not declare.
-- `Hyperlang.module/1` returns the confined OTP callback module for a program.
-  Every callback goes through `Hyperlang.run/4`, so the callback path has the
-  same boundary as a run.
+- `Hyperlang.Actor` is the `GenServer` callback module that runs a program's
+  OTP callbacks; its init argument is `{spec, program, arg}`. Every callback
+  goes through `Hyperlang.run/4`, so the callback path has the same boundary
+  as a run.
+  Generated modules are not OTP callback modules, and hosts never see their
+  names.
+- `Hyperlang.load/1` loads a program into the code pool ahead of its first
+  use. It grants nothing and pins nothing.
 
 The `run/4` result shape is:
 
@@ -154,19 +159,26 @@ binding, and guest code cannot select or replace it.
   erases it, and the runtime's literal-area collection then copies the value
   into any run worker that still references it. Guest code cannot read
   `persistent_term` or another program's module (both are `verify` errors).
-- Code-slot pins: a live OTP actor pins the code slot its callback module
-  names, from its `init/1` until it exits. Reclamation never takes a pinned
-  slot, and `release` of a pinned slot takes effect when its last pin goes.
-  An actor's callback module and program literal therefore stay loaded for
-  its whole life, and the literal is never copied onto its heap. Pins are
-  charged to the actor's scope (`spec.policy.scope`, else the actor's own
-  default scope). A scope pins at most `max_code_pins` distinct slots
-  (scope policy, default 64); further actors of an already pinned program
-  cost no pin. `init/1` past that bound stops with `code_pool`
-  (`details.reason` `pin_limit`). When every slot of a load's `code_pool`
-  window is pinned or still running guest code, the load fails with
-  `code_pool` ("no generated code slots available"). Pins survive a
-  CodeServer restart.
+- Code-slot pins: an actor's `init/1` loads the program value the actor was
+  started with and pins its code slot in one CodeServer call, and the pin
+  holds until the actor exits. No release or reclamation can run between the
+  load and the pin, so an actor always runs the program it was started with:
+  a slot released or reused by another program before `init/1` is loaded
+  again (or another slot is taken), never run as found. Reclamation never
+  takes a pinned slot, and `release` of a pinned slot takes effect when its
+  last pin goes. An actor's generated module and program literal therefore
+  stay loaded for its whole life. The actor's state references the literal;
+  the copy of the program value that arrives with the init argument is
+  garbage once `init/1` returns. Only an actor pins, and only for itself: a
+  caller cannot hold a pin apart from a live actor. Pins are charged to the
+  actor's scope (`spec.policy.scope`, else the actor's own default scope). A
+  scope pins at most `max_code_pins` distinct slots (scope policy, default
+  64); further actors of an already pinned program cost no pin. `init/1`
+  past that bound stops with `code_pool` (`details.reason` `pin_limit`),
+  checked before any load. When every slot of a load's `code_pool` window is
+  pinned or still running guest code, the load fails with `code_pool` ("no
+  generated code slots available"), and an actor's `init/1` stops with it.
+  Pins survive a CodeServer restart.
 - Guest code never receives worker pids, parent pids, monitor refs, ports, raw
   references, external funs, IO devices, or mailboxes.
 - The reduction watchdog observes process reductions externally and kills the
@@ -338,8 +350,11 @@ and unknown keys are rejected rather than ignored. Source `-export` attributes d
 remain inert metadata for guest source compatibility. Only normalized manifest
 exports can be called through `Hyperlang.run/4` and generated `$safe_export/4`.
 OTP callbacks (`init/1`, `handle_call/3`, ...) defined by the source are
-declared automatically so `Hyperlang.module/1` can dispatch them; no other
-function becomes callable that way.
+declared automatically so a `Hyperlang.Actor` can dispatch them; no
+other function becomes callable that way. An actor calls an optional callback
+(`handle_info/2`, `terminate/2`) only when the program exports it, as OTP
+does for a callback module: a message to a program without `handle_info/2` is
+dropped.
 
 Export dispatch must use host-selected manifest export ids, never guest-supplied
 module/function/arity tuples, generated module names, generated helper names, or
@@ -578,7 +593,7 @@ crossing the sandbox boundary.
 
 Hyperlang has a closed public fault taxonomy. Primary error categories returned
 by `Hyperlang.program/1,2` and `Hyperlang.run/4` (and therefore by every
-`Hyperlang.module/1` callback) must be one of:
+`Hyperlang.Actor` callback) must be one of:
 
 - Parse, verification, and compiler setup faults: `api`, `source`, `lexer`,
   `parse`, `manifest`, `verify`, `codegen`, `generated_form_verify`,
@@ -726,10 +741,25 @@ verification of this release measured the following residual effects:
 - Shared node resources. All guests share BEAM schedulers, memory allocators,
   the garbage collector and the code server. Distinct scopes do not create
   OS-level separation.
-- Heap-pressure latency. With 16 heavy tenants and scope controls on, victim
-  p99 latency stayed within 1.33x of baseline under CPU load and 1.04x under
-  compile load. Under heap pressure the factor was 1.29x, 2.30x and 15.87x in
-  three trials, so the heap-pressure bound is not reliable.
+- Heap-pressure latency. The R2-4 heap bound
+  (`test/isolation/round2_stress_test.exs`) is: with 16 heap-pressure
+  tenants on four schedulers, each in its own `:background` scope with one
+  run and a churn rate of 200,000 heap words or 20 collections per 100 ms, a
+  latency-class victim's p99 is at most three times its p99 with no tenants.
+  The test runs three fresh trials on the paired measurement described under
+  Channel contention. In ten consecutive runs at load average 4.4-6.1, every
+  trial passed at 1.19x-1.67x.
+
+  The churn rate carries this bound. A tenant spends its budget in a burst
+  of a few milliseconds after each refill and is suspended for the rest of
+  the period; the victim's p99 rises inside the burst. With churn
+  enforcement disabled, the tenants never pause and the victim's p99 was
+  8.8x-9.3x. With churn enforcement on and the tenants at normal instead of
+  low process priority, trials stayed at 1.29x-1.46x, so the priority class
+  alone does not carry the bound at 16 tenants. Tenants without a churn
+  rate, with a larger one, or in larger numbers are outside the tested
+  bound. Compile load has no asserted bound; the matrix test records its
+  sequential rows as evidence only.
 - Channel contention. Scope-local quota controllers and their counters rows
   remove per-allocation/free traffic from shared Scope. Channel-only
   sampling stays local; rate/churn policies and heap violations report for
@@ -740,27 +770,42 @@ verification of this release measured the following residual effects:
 
   The R2-4 bound (`test/isolation/round2_stress_test.exs`) is: with 64
   channel tenants on four schedulers, a latency-class victim's p99 is at most
-  three times its p99 with no tenants. The measurement
+  three times its p99 with no tenants. The same bound holds for 64 CPU
+  tenants, each in its own `:background` scope with a rate of 100,000
+  reductions per 100 ms, and for the 16 heap tenants above. The measurement
   (`Hyperlang.Isolation.Contention.paired/2`) is:
   - Interleaving. Unloaded and loaded blocks of 250 requests alternate in
-    ABBA order, 5,000 requests per cell. Each loaded block starts 64 fresh
+    ABBA order, 5,000 requests per cell. Each loaded block starts fresh
     tenants and stops them afterwards. Each block starts on a VM with no
     other runnable process for 1 ms, and its first 20 requests are not
     recorded.
-  - Stall exclusion. A max-priority ticker bound to each scheduler measures
-    its 1 ms timer delay against the timer's millisecond boundary. A
-    request that overlaps a delay of 500 microseconds or more on any
-    scheduler is excluded. Run-queue and server queueing cannot delay a
-    max-priority tick, so they stay in the kept requests.
-  - CPU-share exclusion. A loaded block is excluded when the operating
-    system gave the VM less than 75 percent of the time its schedulers were
-    busy (user plus system CPU time from `ps`, divided by
-    `scheduler_wall_time` active time).
+  - Rate phase (CPU and heap trials). Rate-limited tenants run in a burst
+    after each 100 ms refill and are suspended for the rest of the period.
+    The k-th of the 20 loaded blocks starts 50 + 5k ms after its tenants
+    start, so the loaded blocks cover one whole period, refill burst
+    included. In every CPU and heap trial, two to five loaded blocks span a
+    burst. A fixed 50 ms start never does, because a block lasts about
+    12 ms.
+  - Stall exclusion (CPU and channel trials). A max-priority ticker bound
+    to each scheduler measures its 1 ms timer delay against the timer's
+    millisecond boundary. A request that overlaps a delay of 500
+    microseconds or more on any scheduler is excluded. Run-queue and server
+    queueing cannot delay a max-priority tick, so they stay in the kept
+    requests. Heap trials keep every request: a tenant's garbage collection
+    also delays the tick, so the ticker cannot separate host stalls from
+    the heap pressure under test.
+  - CPU-share exclusion (channel trials). A loaded block is excluded when
+    the operating system gave the VM less than 75 percent of the time its
+    schedulers were busy (user plus system CPU time from `ps`, divided by
+    `scheduler_wall_time` active time). CPU and heap blocks are mostly idle
+    outside the burst, and the 10 ms resolution of `ps` would exclude a
+    burst block more often than an idle one, so they are not judged this
+    way.
   - Validity. A trial fails as uninformative when either cell keeps fewer
     than 2,500 requests.
-  The channel64 trial test runs three fresh trials; the matrix test asserts
-  one paired cpu64 trial and one paired channel64 trial, and records its
-  sequential rows as evidence only.
+  The channel64 and heap16 trial tests each run three fresh trials; the
+  matrix test asserts one paired cpu64 trial and one paired channel64 trial,
+  and records its sequential rows as evidence only.
 
   Three BEAM-side waits on the victim path were removed. The local resume
   check called `Process.alive?/1` on Scope, which waits for a busy Scope to
@@ -769,9 +814,10 @@ verification of this release measured the following residual effects:
   served dozens of requests per time slice and held a scheduler for up to
   about 300 microseconds. In interleaved runs against the previous code on
   the same harness at load average 5, channel64 p99 ratios were 2.20x-2.31x
-  (previous code 3.45x-3.81x). In ten consecutive runs of each R2-4 test at
-  load average 4-7, every trial passed: channel64 2.03x-2.58x, cpu64
-  1.09x-1.31x. Registry's yield lowered aggregate 64-tenant channel
+  (previous code 3.45x-3.81x). In ten consecutive runs of the channel64
+  trial test at load average 4-7, every trial passed at 2.03x-2.58x. In ten
+  consecutive runs of the matrix test at load average 6.0-10.7, every trial
+  passed: cpu64 1.23x-1.82x, channel64 1.94x-2.37x. Registry's yield lowered aggregate 64-tenant channel
   allocation/free throughput by about 11 percent and single-tenant
   throughput by about 2 percent.
 
@@ -830,11 +876,9 @@ verification of this release measured the following residual effects:
   `max_code_pins` so that the scopes sharing a window cannot pin all of it.
   Actors without an explicit `spec.policy.scope` each own a scope and so are
   bounded only by the pool. A leaked actor holds its slot until it exits.
-- Module names before an actor starts. `Hyperlang.module/1` returns the
-  slot's module name; the slot is not pinned until an actor's `init/1` runs.
-  If the slot is released or reclaimed in between, starting the actor fails
-  (`undef` when the slot is free, or the slot's new program when another
-  program reused it). Start actors right after `module/1`.
+  Load admission has no fairness: programs whose actors restart back to back
+  can keep every slot of a window pinned, and a start of another program in
+  that window then fails with `code_pool` until a slot is unpinned.
 - Per-call floor. Every run and actor callback waits for one Scope admission
   call (the lease, the membership and the runtime lifetime); a spawned run
   also waits for its worker's attach call. This server work, not the guest,
